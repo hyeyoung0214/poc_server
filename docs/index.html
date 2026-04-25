@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>현대차 수소/HTWO 미디어 모니터</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+<body>
+
+  <!-- ===== HEADER ===== -->
+  <header class="header">
+    <div class="header-inner">
+      <div class="logo">
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+          <circle cx="16" cy="16" r="16" fill="#003C8F"/>
+          <text x="16" y="21" text-anchor="middle" font-size="14" font-weight="bold" fill="white">H₂</text>
+        </svg>
+        <div>
+          <h1>수소/HTWO 미디어 모니터</h1>
+          <p class="subtitle">현대자동차 수소차 &amp; HTWO 미디어 분석 대시보드</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="last-updated" id="last-updated">데이터 로딩 중…</span>
+        <a class="btn-actions"
+           href="https://github.com/hyeyoung0214/poc_server/actions"
+           target="_blank" rel="noopener">
+          Actions ↗
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+
+    <!-- ===== STATS ===== -->
+    <section class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">전체 기사</div>
+        <div class="stat-value" id="stat-total">—</div>
+      </div>
+      <div class="stat-card positive">
+        <div class="stat-label">긍정</div>
+        <div class="stat-value" id="stat-positive">—</div>
+        <div class="stat-pct" id="stat-positive-pct"></div>
+      </div>
+      <div class="stat-card negative">
+        <div class="stat-label">부정</div>
+        <div class="stat-value" id="stat-negative">—</div>
+        <div class="stat-pct" id="stat-negative-pct"></div>
+      </div>
+      <div class="stat-card neutral">
+        <div class="stat-label">중립</div>
+        <div class="stat-value" id="stat-neutral">—</div>
+        <div class="stat-pct" id="stat-neutral-pct"></div>
+      </div>
+    </section>
+
+    <!-- ===== CHARTS ===== -->
+    <section class="charts-grid">
+      <div class="chart-card">
+        <h3 class="chart-title">감성 분포</h3>
+        <div class="chart-wrap chart-wrap--sm">
+          <canvas id="chart-sentiment"></canvas>
+        </div>
+      </div>
+      <div class="chart-card chart-card--wide">
+        <h3 class="chart-title">날짜별 기사 추이</h3>
+        <div class="chart-wrap">
+          <canvas id="chart-timeline"></canvas>
+        </div>
+      </div>
+      <div class="chart-card">
+        <h3 class="chart-title">상위 키워드 Top 10</h3>
+        <div class="chart-wrap">
+          <canvas id="chart-keywords"></canvas>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== FILTERS ===== -->
+    <section class="filter-section">
+      <div class="filter-row">
+
+        <div class="filter-group">
+          <label class="filter-label">기간</label>
+          <select class="filter-select" id="filter-period">
+            <option value="7">최근 7일</option>
+            <option value="30" selected>최근 30일</option>
+            <option value="90">최근 90일</option>
+            <option value="0">전체</option>
+          </select>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">감성</label>
+          <div class="btn-group" id="sentiment-btns">
+            <button class="filter-btn active" data-v="all">전체</button>
+            <button class="filter-btn pos" data-v="positive">긍정</button>
+            <button class="filter-btn neg" data-v="negative">부정</button>
+            <button class="filter-btn neu" data-v="neutral">중립</button>
+          </div>
+        </div>
+
+        <div class="filter-group">
+          <label class="filter-label">정렬</label>
+          <select class="filter-select" id="filter-sort">
+            <option value="date">최신순</option>
+            <option value="score_desc">감성점수 높은순</option>
+            <option value="score_asc">감성점수 낮은순</option>
+          </select>
+        </div>
+
+      </div>
+
+      <div class="filter-row">
+        <div class="filter-group filter-group--full">
+          <label class="filter-label">
+            키워드 필터
+            <span class="filter-hint">(기사 제목/내용에서 검색)</span>
+          </label>
+          <div class="keyword-bar">
+            <div class="keyword-tags" id="keyword-tags"></div>
+            <div class="keyword-input-wrap">
+              <input id="keyword-input" type="text"
+                     placeholder="키워드 입력 후 Enter 또는 추가 클릭" />
+              <button id="keyword-add-btn">추가</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ARTICLES ===== -->
+    <section class="articles-section">
+      <div class="articles-header">
+        <h3>기사 목록 <span class="articles-count" id="articles-count"></span></h3>
+      </div>
+      <div class="articles-grid" id="articles-grid">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>데이터를 불러오는 중…</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <footer class="footer">
+    <p>데이터 출처: 네이버 뉴스 &nbsp;|&nbsp; 분석: Google Gemini 1.5 Flash &nbsp;|&nbsp; 자동 업데이트: 6시간마다 (KST 9·15·21·3시)</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
