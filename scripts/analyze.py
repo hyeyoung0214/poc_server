@@ -7,10 +7,10 @@ genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 _model = genai.GenerativeModel(
     "gemini-1.5-flash",
-    generation_config=genai.GenerationConfig(
-        response_mime_type="application/json",
-        temperature=0.1,
-    ),
+    generation_config={
+        "response_mime_type": "application/json",
+        "temperature": 0.1,
+    },
 )
 
 PROMPT_TEMPLATE = """\
@@ -35,11 +35,21 @@ PROMPT_TEMPLATE = """\
 
 
 def _parse_result(raw: str) -> dict:
-    data = json.loads(raw)
+    text = raw.strip()
+    # 마크다운 코드블록 제거 (안전 처리)
+    if text.startswith("```"):
+        text = text.split("```")[1]
+        if text.startswith("json"):
+            text = text[4:]
+        text = text.strip()
+    data = json.loads(text)
+    sentiment = data.get("sentiment", "neutral")
+    if sentiment not in ("positive", "negative", "neutral"):
+        sentiment = "neutral"
     return {
         "summary": str(data.get("summary", "")),
         "keywords": [str(k) for k in data.get("keywords", [])][:5],
-        "sentiment": data.get("sentiment", "neutral"),
+        "sentiment": sentiment,
         "sentiment_score": float(data.get("sentiment_score", 0.5)),
         "sentiment_reason": str(data.get("sentiment_reason", "")),
     }
