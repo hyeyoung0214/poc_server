@@ -6,7 +6,7 @@ import google.generativeai as genai
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
 _model = genai.GenerativeModel(
-    "gemini-1.5-flash",
+    "gemini-3-flash-preview",
     generation_config={
         "response_mime_type": "application/json",
         "temperature": 0.1,
