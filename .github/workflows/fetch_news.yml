@@ -32,7 +32,17 @@ jobs:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PYTHONIOENCODING: utf-8
         run: python main.py
+
+      - name: Upload run logs (성공·실패 모두)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-logs-${{ github.run_id }}
+          path: scripts/logs/*.log
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Commit and push results
         run: |

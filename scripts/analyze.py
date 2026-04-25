@@ -1,7 +1,11 @@
 import os
+import re
 import json
 import time
+import logging
 import google.generativeai as genai
+
+log = logging.getLogger("analyze")
 
 genai.configure(api_key=os.environ["GEMINI_API_KEY"])
 
@@ -36,7 +40,6 @@ PROMPT_TEMPLATE = """\
 
 def _parse_result(raw: str) -> dict:
     text = raw.strip()
-    # 마크다운 코드블록 제거 (안전 처리)
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
@@ -55,28 +58,61 @@ def _parse_result(raw: str) -> dict:
     }
 
 
+def _get_retry_delay(err_str: str, default: int = 65) -> int:
+    """429 에러 메시지에서 retry_delay(초) 추출"""
+    match = re.search(r"retry_delay\s*\{\s*seconds:\s*(\d+)", err_str)
+    return int(match.group(1)) + 5 if match else default
+
+
 def analyze_article(article: dict) -> dict | None:
     prompt = PROMPT_TEMPLATE.format(
         title=article["title"],
         description=article.get("description") or article["title"],
     )
-    try:
-        response = _model.generate_content(prompt)
-        return _parse_result(response.text)
-    except Exception as e:
-        print(f"  [ERROR] 분석 실패 ({article['title'][:30]}): {e}")
-        return None
+    for attempt in range(3):
+        try:
+            response = _model.generate_content(prompt)
+            return _parse_result(response.text)
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str:
+                wait = _get_retry_delay(err_str)
+                log.warning(
+                    f"[RATE LIMIT] {wait}초 대기 후 재시도 (시도 {attempt + 1}/3) "
+                    f"— {article['title'][:40]}"
+                )
+                log.debug(f"전체 에러: {err_str}")
+                time.sleep(wait)
+            else:
+                log.error(
+                    f"[ERROR] 분석 실패 — {article['title'][:40]} | "
+                    f"URL: {article.get('url', 'N/A')} | 에러: {e}"
+                )
+                return None
+    log.error(f"[SKIP] 재시도 초과 — {article['title'][:40]}")
+    return None
 
 
-def analyze_articles(articles: list, delay: float = 4.5) -> list:
-    """Gemini 무료 티어 15 RPM → 기사 간 4.5초 대기"""
+def analyze_articles(articles: list, delay: float = 8.0) -> list:
+    """요청 간 8초 대기 + 429 시 자동 재시도"""
     total = len(articles)
+    success_count = 0
+    fail_count = 0
+
     for i, article in enumerate(articles):
-        print(f"  [{i + 1}/{total}] 분석: {article['title'][:45]}...")
+        log.info(f"  [{i + 1}/{total}] 분석: {article['title'][:45]}...")
         result = analyze_article(article)
         if result:
             article.update(result)
             article["analyzed"] = True
+            success_count += 1
+        else:
+            fail_count += 1
+            log.warning(
+                f"  [FAIL] 미분석 처리 — {article['title'][:40]} | URL: {article.get('url', 'N/A')}"
+            )
         if i < total - 1:
             time.sleep(delay)
+
+    log.info(f"분석 결과: 성공 {success_count}건, 실패 {fail_count}건")
     return articles

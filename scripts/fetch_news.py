@@ -1,10 +1,13 @@
 import os
 import re
 import hashlib
+import logging
 import requests
 from datetime import datetime
 from email.utils import parsedate_to_datetime
 from urllib.parse import urlparse
+
+log = logging.getLogger("fetch_news")
 
 NAVER_CLIENT_ID = os.environ["NAVER_CLIENT_ID"]
 NAVER_CLIENT_SECRET = os.environ["NAVER_CLIENT_SECRET"]
@@ -94,7 +97,7 @@ def fetch_articles(keywords: list) -> list:
             )
             resp.raise_for_status()
             items = resp.json().get("items", [])
-            print(f"  [{keyword}] {len(items)}건 수집")
+            log.info(f"  [{keyword}] {len(items)}건 수집")
 
             for item in items:
                 url = item.get("originallink") or item.get("link", "")
@@ -119,6 +122,6 @@ def fetch_articles(keywords: list) -> list:
                 })
 
         except Exception as e:
-            print(f"[ERROR] Naver API 오류 ({keyword}): {e}")
+            log.error(f"[ERROR] Naver API 오류 (키워드: {keyword}) — {e}", exc_info=True)
 
     return articles

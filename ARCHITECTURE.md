@@ -30,8 +30,10 @@ poc_server/
 │   ├── main.py                 # 파이프라인 진입점
 │   ├── fetch_news.py           # Naver API 뉴스 수집
 │   ├── analyze.py              # Gemini AI 분석 (요약·감성·키워드)
+│   ├── logger.py               # 파일+콘솔 로깅 셋업
 │   ├── keywords.json           # 검색 키워드 설정
-│   └── requirements.txt        # Python 의존성
+│   ├── requirements.txt        # Python 의존성
+│   └── logs/                   # 실행 로그 (.gitignore — Actions 아티팩트로 업로드)
 ├── docs/                       # GitHub Pages 루트
 │   ├── index.html              # 메인 대시보드
 │   ├── style.css               # 스타일
@@ -134,6 +136,16 @@ poc_server/
 `Repo → Settings → Pages → Source: Deploy from branch → Branch: main / docs`
 
 배포 URL: `https://hyeyoung0214.github.io/poc_server/`
+
+---
+
+## 로그 시스템
+
+- **위치**: `scripts/logs/run_YYYYMMDD_HHMMSS.log` (실행마다 신규 파일)
+- **수준**: 파일=DEBUG, 콘솔=INFO
+- **포맷**: `시간 [수준] 모듈: 메시지`
+- **저장 항목**: API 오류, 429 Rate Limit, JSON 파싱 실패, 분석 실패 기사 (URL 포함)
+- **Actions**: `poc-logs-{run_id}` 아티팩트로 14일 보관
 
 ---
 
