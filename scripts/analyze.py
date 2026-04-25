@@ -96,7 +96,17 @@ def _parse_result(raw: str) -> dict:
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
-    data = json.loads(text)
+    # raw_decode로 첫 JSON 객체만 파싱 — "Extra data" 에러 방지
+    try:
+        data, _ = json.JSONDecoder().raw_decode(text)
+    except json.JSONDecodeError:
+        # 폴백: 첫 { 부터 마지막 } 까지 추출
+        start = text.find("{")
+        end = text.rfind("}")
+        if start >= 0 and end > start:
+            data = json.loads(text[start:end + 1])
+        else:
+            raise
 
     sentiment = data.get("sentiment", "neutral")
     if sentiment not in ("positive", "negative", "neutral"):
