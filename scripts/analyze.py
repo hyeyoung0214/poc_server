@@ -3,6 +3,9 @@ import re
 import json
 import time
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import google.generativeai as genai
 
 log = logging.getLogger("analyze")
@@ -150,26 +153,51 @@ def analyze_article(article: dict) -> dict | None:
     return None
 
 
-def analyze_articles(articles: list, delay: float = 8.0) -> list:
-    """요청 간 8초 대기 + 429 시 자동 재시도"""
+def analyze_articles(articles: list, max_workers: int = 5) -> list:
+    """병렬 분석 — ThreadPoolExecutor, 429 발생 시 워커별 자동 재시도"""
     total = len(articles)
+    if total == 0:
+        return articles
+
     success = 0
     fail = 0
+    lock = threading.Lock()
+    completed = [0]
 
-    for i, article in enumerate(articles):
-        log.info(f"  [{i + 1}/{total}] 분석: {article['title'][:45]}...")
+    def _process(article: dict) -> tuple:
         result = analyze_article(article)
-        if result:
-            article.update(result)
-            article["analyzed"] = True
-            success += 1
-        else:
-            fail += 1
-            log.warning(
-                f"  [FAIL] 미분석 처리 — {article['title'][:40]} | URL: {article.get('url', 'N/A')}"
-            )
-        if i < total - 1:
-            time.sleep(delay)
+        with lock:
+            completed[0] += 1
+            cur = completed[0]
+        log.info(f"  [{cur}/{total}] 완료: {article['title'][:45]}")
+        return article, result
 
-    log.info(f"분석 결과: 성공 {success}건, 실패 {fail}건")
+    log.info(f"병렬 분석 시작 — {total}건, 동시 워커 {max_workers}개")
+    start_ts = time.time()
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_process, a) for a in articles]
+        for future in as_completed(futures):
+            try:
+                article, result = future.result()
+            except Exception as e:
+                log.error(f"  [WORKER ERROR] {e}")
+                fail += 1
+                continue
+
+            if result:
+                article.update(result)
+                article["analyzed"] = True
+                success += 1
+            else:
+                fail += 1
+                log.warning(
+                    f"  [FAIL] 미분석 — {article['title'][:40]} | URL: {article.get('url', 'N/A')}"
+                )
+
+    elapsed = time.time() - start_ts
+    log.info(
+        f"분석 결과: 성공 {success}건, 실패 {fail}건 "
+        f"(소요 {elapsed:.1f}초, 병렬 {max_workers} 워커, {total / max(elapsed, 1):.1f}건/초)"
+    )
     return articles

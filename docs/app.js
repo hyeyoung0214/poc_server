@@ -22,6 +22,8 @@ let activeCategory  = 'all';
 let activePeriod    = 30;
 let activeSort      = 'date';
 let activeMinRelevance = 0.5;
+let activeDateFrom = null;   // YYYY-MM-DD
+let activeDateTo   = null;   // YYYY-MM-DD
 let charts = {};
 
 const CATEGORY_CSS_MAP = {
@@ -73,7 +75,10 @@ function getFiltered() {
   let arr = [...allArticles];
 
   /* period */
-  if (activePeriod > 0) {
+  if (activePeriod === 'custom') {
+    if (activeDateFrom) arr = arr.filter(a => (a.published_at || '') >= activeDateFrom);
+    if (activeDateTo)   arr = arr.filter(a => (a.published_at || '') <= activeDateTo);
+  } else if (activePeriod > 0) {
     const cut = new Date();
     cut.setDate(cut.getDate() - activePeriod);
     arr = arr.filter(a => new Date(a.published_at) >= cut);
@@ -379,8 +384,28 @@ function buildKeywordData(arr) {
 /* ===================== FILTER INIT ===================== */
 function initFilters() {
   /* period */
-  document.getElementById('filter-period').addEventListener('change', e => {
-    activePeriod = parseInt(e.target.value);
+  const periodSel    = document.getElementById('filter-period');
+  const customWrap   = document.getElementById('filter-custom-date');
+  const dateFromInp  = document.getElementById('filter-date-from');
+  const dateToInp    = document.getElementById('filter-date-to');
+
+  periodSel.addEventListener('change', e => {
+    const v = e.target.value;
+    if (v === 'custom') {
+      activePeriod = 'custom';
+      customWrap.hidden = false;
+    } else {
+      activePeriod = parseInt(v);
+      customWrap.hidden = true;
+    }
+    applyFilters();
+  });
+  dateFromInp.addEventListener('change', e => {
+    activeDateFrom = e.target.value || null;
+    applyFilters();
+  });
+  dateToInp.addEventListener('change', e => {
+    activeDateTo = e.target.value || null;
     applyFilters();
   });
 
@@ -469,6 +494,9 @@ function initRunPanel() {
   const extraInput   = document.getElementById('run-extra-kws');
   const whiteInput   = document.getElementById('run-whitelist');
   const blackInput   = document.getElementById('run-blacklist');
+  const displayInput = document.getElementById('run-display');
+  const daysSelect   = document.getElementById('run-days');
+  const workersInput = document.getElementById('run-workers');
   const resetBox     = document.getElementById('run-reset');
 
   /* 기본 키워드 표시 */
@@ -483,19 +511,26 @@ function initRunPanel() {
     if (saved.extra)     extraInput.value = saved.extra;
     if (saved.whitelist) whiteInput.value = saved.whitelist;
     if (saved.blacklist) blackInput.value = saved.blacklist;
+    if (saved.display)   displayInput.value = saved.display;
+    if (saved.days)      daysSelect.value = saved.days;
+    if (saved.workers)   workersInput.value = saved.workers;
   } catch {}
 
   /* 입력 변경 시 자동 저장 */
   const savePrefs = () => {
     const prefs = {
-      extra: extraInput.value.trim(),
+      extra:     extraInput.value.trim(),
       whitelist: whiteInput.value.trim(),
       blacklist: blackInput.value.trim(),
+      display:   displayInput.value,
+      days:      daysSelect.value,
+      workers:   workersInput.value,
     };
     localStorage.setItem(LS_RUN_PREFS, JSON.stringify(prefs));
   };
-  [extraInput, whiteInput, blackInput].forEach(el => {
+  [extraInput, whiteInput, blackInput, displayInput, daysSelect, workersInput].forEach(el => {
     el.addEventListener('input', savePrefs);
+    el.addEventListener('change', savePrefs);
   });
 
   /* 패널 열기 */
@@ -515,6 +550,9 @@ function initRunPanel() {
     const extra     = extraInput.value.trim();
     const whitelist = whiteInput.value.trim();
     const blacklist = blackInput.value.trim();
+    const display   = displayInput.value || '30';
+    const days      = daysSelect.value || '0';
+    const workers   = workersInput.value || '5';
     const reset     = resetBox.checked;
 
     savePrefs();
@@ -523,11 +561,14 @@ function initRunPanel() {
     const url = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${WORKFLOW_FILE}`;
     window.open(url, '_blank', 'noopener');
 
-    /* 입력값을 한꺼번에 클립보드에 복사 (사용자가 분기별 input란에 붙여넣을 수 있게) */
+    /* 입력값을 한꺼번에 클립보드에 복사 */
     const clipText = [
       extra     && `[추가 키워드]   ${extra}`,
       whitelist && `[필수 포함]    ${whitelist}`,
       blacklist && `[제외 단어]    ${blacklist}`,
+      `[수집 건수]    ${display}`,
+      `[기간(일)]    ${days}`,
+      `[병렬 워커]    ${workers}`,
       reset     && `[초기화]      체크 활성화`,
     ].filter(Boolean).join('\n');
 
@@ -539,16 +580,17 @@ function initRunPanel() {
     const lines = [
       '✅ GitHub Actions 페이지가 열렸습니다.',
       '',
-      '아래 순서로 진행하세요:',
-      '1. 우측 상단 [Run workflow] 클릭',
-      extra     ? `2. "추가 검색 키워드"란 → ${extra}` : '2. 추가 키워드 없음',
-      whitelist ? `3. "필수 포함 단어"란 → ${whitelist}` : '3. whitelist 없음',
-      blacklist ? `4. "제외 단어"란 → ${blacklist}`     : '4. blacklist 없음',
-      reset     ? '5. "기존 데이터 초기화" 체크' : '5. 초기화 미사용',
-      '6. 초록색 [Run workflow] 클릭',
+      '아래 입력란을 채우고 [Run workflow] 클릭:',
+      `• 추가 검색 키워드: ${extra || '(없음)'}`,
+      `• 필수 포함(whitelist): ${whitelist || '(없음)'}`,
+      `• 제외(blacklist): ${blacklist || '(없음)'}`,
+      `• 키워드당 수집 건수: ${display}`,
+      `• 최근 N일: ${days === '0' ? '전체' : days + '일'}`,
+      `• 병렬 워커 수: ${workers}`,
+      `• 데이터 초기화: ${reset ? '체크' : '미체크'}`,
       '',
-      '※ 위 입력값은 자동으로 클립보드에 복사되었습니다.',
-      '※ 분석은 약 5~15분 소요되며, 완료 후 페이지 새로고침 시 반영됩니다.',
+      '※ 위 값들이 자동으로 클립보드에 복사되었습니다.',
+      `※ 병렬 ${workers} 워커 기준 약 ${Math.ceil(50 / parseInt(workers))}~${Math.ceil(120 / parseInt(workers))}초 소요 예상.`,
     ];
     alert(lines.join('\n'));
   });

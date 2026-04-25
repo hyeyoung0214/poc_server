@@ -197,6 +197,50 @@ a { color: inherit; text-decoration: none; }
   line-height: 1.6;
 }
 
+.run-row-2col {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-bottom: 14px;
+}
+@media (max-width: 700px) {
+  .run-row-2col { grid-template-columns: 1fr; }
+}
+
+.run-field input[type="number"], .run-field select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 9px 12px;
+  font-size: 14px;
+  outline: none;
+  color: var(--text);
+  background: #fff;
+}
+.run-field input[type="number"]:focus, .run-field select:focus {
+  border-color: var(--blue-lt);
+}
+
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.date-range input[type="date"] {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  color: var(--text);
+  background: #fff;
+  font-family: inherit;
+}
+.date-range input[type="date"]:focus { border-color: var(--blue-lt); }
+.date-range span { color: var(--text-sm); }
+
+.filter-group--date { min-width: 280px; }
+
 .run-help-tip {
   display: block;
   margin-top: 4px;

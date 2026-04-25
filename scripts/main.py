@@ -11,7 +11,7 @@ from logger import setup_logger
 LOG_FILE = setup_logger()
 log = logging.getLogger("main")
 
-from fetch_news import fetch_articles, filter_articles
+from fetch_news import fetch_articles, filter_articles, filter_by_days
 from analyze import analyze_articles
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -81,15 +81,29 @@ def main() -> int:
         keywords = load_keywords()
         log.info(f"검색 키워드: {keywords}")
 
-        log.info("\n[1단계] 뉴스 수집")
-        fetched = fetch_articles(keywords)
-
-        # 화이트/블랙리스트 필터 (Gemini 호출 전 사전 필터)
+        # 환경변수 파싱
+        display       = int(os.environ.get("DISPLAY_PER_KEYWORD", "30") or 30)
+        days_back     = int(os.environ.get("DAYS_BACK", "0") or 0)
+        max_workers   = int(os.environ.get("MAX_WORKERS", "5") or 5)
         whitelist_env = os.environ.get("WHITELIST", "").strip()
         blacklist_env = os.environ.get("BLACKLIST", "").strip()
         whitelist = [w.strip() for w in whitelist_env.split(",") if w.strip()] if whitelist_env else []
         blacklist = [b.strip() for b in blacklist_env.split(",") if b.strip()] if blacklist_env else []
 
+        log.info(
+            f"설정 — 키워드당 수집:{display} / 기간:{days_back}일(0=전체) / "
+            f"병렬 워커:{max_workers}"
+        )
+
+        log.info("\n[1단계] 뉴스 수집")
+        fetched = fetch_articles(keywords, display=display)
+
+        # 기간 필터
+        if days_back > 0:
+            log.info(f"\n[1.3단계] 기간 필터 — 최근 {days_back}일")
+            fetched = filter_by_days(fetched, days_back)
+
+        # 화이트/블랙리스트 필터 (Gemini 호출 전 사전 필터)
         if whitelist or blacklist:
             log.info(f"\n[1.5단계] 사전 필터링 — 화이트: {whitelist} / 블랙: {blacklist}")
             fetched = filter_articles(fetched, whitelist, blacklist)
@@ -98,8 +112,8 @@ def main() -> int:
         log.info(f"신규 기사: {len(new_articles)}개")
 
         if new_articles:
-            log.info(f"\n[2단계] AI 분석 ({len(new_articles)}건)")
-            analyzed = analyze_articles(new_articles)
+            log.info(f"\n[2단계] AI 분석 ({len(new_articles)}건, 병렬 {max_workers} 워커)")
+            analyzed = analyze_articles(new_articles, max_workers=max_workers)
             all_articles = analyzed + existing
         else:
             log.info("신규 기사 없음 — 저장 건너뜀")

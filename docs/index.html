@@ -77,6 +77,35 @@
           </small>
         </div>
 
+        <div class="run-row-2col">
+          <div class="run-field">
+            <label for="run-display">
+              📰 키워드당 수집 건수 <span class="run-hint">(5~100)</span>
+            </label>
+            <input type="number" id="run-display" min="5" max="100" value="30" step="5" />
+          </div>
+          <div class="run-field">
+            <label for="run-days">
+              📅 최근 N일치 분석 <span class="run-hint">(0=전체)</span>
+            </label>
+            <select id="run-days">
+              <option value="0">전체 기간</option>
+              <option value="1">최근 1일</option>
+              <option value="3">최근 3일</option>
+              <option value="7" selected>최근 7일</option>
+              <option value="14">최근 14일</option>
+              <option value="30">최근 30일</option>
+              <option value="90">최근 90일</option>
+            </select>
+          </div>
+          <div class="run-field">
+            <label for="run-workers">
+              ⚡ 병렬 워커 수 <span class="run-hint">(1~10)</span>
+            </label>
+            <input type="number" id="run-workers" min="1" max="10" value="5" step="1" />
+          </div>
+        </div>
+
         <div class="run-field">
           <label class="run-checkbox">
             <input type="checkbox" id="run-reset" />
@@ -152,7 +181,17 @@
             <option value="30" selected>최근 30일</option>
             <option value="90">최근 90일</option>
             <option value="0">전체</option>
+            <option value="custom">사용자 지정</option>
           </select>
+        </div>
+
+        <div class="filter-group filter-group--date" id="filter-custom-date" hidden>
+          <label class="filter-label">사용자 지정</label>
+          <div class="date-range">
+            <input type="date" id="filter-date-from" />
+            <span>~</span>
+            <input type="date" id="filter-date-to" />
+          </div>
         </div>
 
         <div class="filter-group">

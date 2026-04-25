@@ -130,15 +130,28 @@ def filter_articles(
     return filtered
 
 
-def fetch_articles(keywords: list) -> list:
+def filter_by_days(articles: list, days_back: int) -> list:
+    """N일 이내 기사만 통과 (0 이하면 필터 없음)"""
+    if days_back <= 0:
+        return articles
+    from datetime import datetime, timedelta
+    cutoff = datetime.now() - timedelta(days=days_back)
+    cutoff_str = cutoff.strftime("%Y-%m-%d")
+    filtered = [a for a in articles if a.get("published_at", "") >= cutoff_str]
+    log.info(f"  기간 필터 ({days_back}일) — 통과 {len(filtered)}건 / 제외 {len(articles) - len(filtered)}건")
+    return filtered
+
+
+def fetch_articles(keywords: list, display: int = 30) -> list:
     seen_urls: set = set()
     articles: list = []
+    display = max(1, min(100, int(display)))
 
     for keyword in keywords:
         try:
             resp = requests.get(
                 "https://openapi.naver.com/v1/search/news.json",
-                params={"query": keyword, "display": 30, "sort": "date"},
+                params={"query": keyword, "display": display, "sort": "date"},
                 headers={
                     "X-Naver-Client-Id": NAVER_CLIENT_ID,
                     "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
