@@ -80,6 +80,56 @@ def make_id(url: str) -> str:
     return hashlib.md5(url.encode()).hexdigest()[:12]
 
 
+def filter_articles(
+    articles: list,
+    whitelist: list | None = None,
+    blacklist: list | None = None,
+) -> list:
+    """
+    제목+요약문 기준으로 화이트/블랙리스트 적용
+
+    - whitelist: 1개 이상 포함되어야 통과 (없으면 모두 통과)
+    - blacklist: 하나라도 매칭되면 제외 (없으면 모두 통과)
+    """
+    whitelist = [w.strip() for w in (whitelist or []) if w.strip()]
+    blacklist = [b.strip() for b in (blacklist or []) if b.strip()]
+
+    if not whitelist and not blacklist:
+        return articles
+
+    filtered = []
+    excluded_white = 0
+    excluded_black = 0
+
+    for a in articles:
+        text = f"{a['title']} {a.get('description', '')}".lower()
+
+        if whitelist:
+            if not any(w.lower() in text for w in whitelist):
+                excluded_white += 1
+                log.debug(f"  [WHITELIST 제외] {a['title'][:45]}")
+                continue
+
+        if blacklist:
+            matched_black = next(
+                (b for b in blacklist if b.lower() in text), None
+            )
+            if matched_black:
+                excluded_black += 1
+                log.debug(
+                    f"  [BLACKLIST '{matched_black}' 매칭] {a['title'][:45]}"
+                )
+                continue
+
+        filtered.append(a)
+
+    log.info(
+        f"  필터링 결과: 통과 {len(filtered)}건 / "
+        f"화이트 미매칭 {excluded_white}건 / 블랙 매칭 {excluded_black}건"
+    )
+    return filtered
+
+
 def fetch_articles(keywords: list) -> list:
     seen_urls: set = set()
     articles: list = []

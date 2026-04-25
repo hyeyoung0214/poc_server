@@ -5,7 +5,17 @@ on:
   workflow_dispatch:
     inputs:
       extra_keywords:
-        description: "추가 검색 키워드 (쉼표로 구분, 비워두면 기본값만 사용)"
+        description: "추가 검색 키워드 (쉼표 구분, 비워두면 기본값만 사용)"
+        required: false
+        default: ""
+        type: string
+      whitelist:
+        description: "필수 포함 단어 (쉼표 구분, 1개 이상 매칭된 기사만 분석)"
+        required: false
+        default: ""
+        type: string
+      blacklist:
+        description: "제외 단어 (쉼표 구분, 하나라도 매칭되면 제외)"
         required: false
         default: ""
         type: string
@@ -49,6 +59,8 @@ jobs:
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           EXTRA_KEYWORDS: ${{ inputs.extra_keywords }}
+          WHITELIST: ${{ inputs.whitelist }}
+          BLACKLIST: ${{ inputs.blacklist }}
           PYTHONIOENCODING: utf-8
         run: python main.py
 

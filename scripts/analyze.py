@@ -17,25 +17,73 @@ _model = genai.GenerativeModel(
     },
 )
 
-PROMPT_TEMPLATE = """\
-다음 뉴스 기사를 분석해주세요.
+# === 미디어 애널리스트 페르소나 ===
+PERSONA = """\
+당신은 한국 자동차·에너지 산업을 10년 이상 분석해 온 시니어 미디어 애널리스트입니다.
+기업의 PR 의도, 산업·정책 동향, 시장 영향력, 보도 프레임을 종합적으로 평가하는 전문가입니다.
+관심 영역: 현대자동차그룹 HTWO 사업부, 수소연료전지(FCEV), 수소 모빌리티(트럭·버스·철도·선박),
+수소충전 인프라, 글로벌 수소 정책 및 경쟁사 동향.
+당신은 분석 결과를 항상 객관적이고 정밀한 JSON 형식으로 제공합니다."""
 
+
+PROMPT_TEMPLATE = (
+    PERSONA
+    + """
+
+[분석 대상 기사]
 제목: {title}
 내용: {description}
 
-아래 JSON 형식으로만 응답하세요:
+[분석 관점]
+이 기사를 "현대자동차 HTWO 사업부 및 수소연료전지·수소 모빌리티 사업"의
+미디어 모니터링 관점에서 평가해주세요.
+
+[필수 출력 — 아래 JSON 형식만 사용]
 {{
-  "summary": "기사 핵심 내용을 2-3문장으로 요약",
+  "summary": "기사 핵심을 2-3문장 객관적으로 요약",
   "keywords": ["핵심키워드1", "핵심키워드2", "핵심키워드3", "핵심키워드4", "핵심키워드5"],
-  "sentiment": "positive 또는 negative 또는 neutral",
-  "sentiment_score": 0.0에서 1.0 사이 숫자,
-  "sentiment_reason": "긍정/부정/중립으로 판단한 근거 한 문장"
+  "sentiment": "positive | negative | neutral",
+  "sentiment_score": 0.0,
+  "sentiment_reason": "감성 판단 근거 한 문장",
+  "relevance_score": 0.0,
+  "relevance_reason": "HTWO·수소연료전지·수소 모빌리티와의 관련성 근거 한 문장",
+  "category": "수소차/HTWO 직접 | 수소 모빌리티 | EV/전기차 | 자율주행 | 모빌리티 일반 | 기타"
 }}
 
-감성 판단 기준:
-- positive: 현대차·수소차·HTWO에 우호적, 성과·성장·투자·수상 관련
-- negative: 문제점·비판·사고·논란·규제·실적 악화 관련
-- neutral: 단순 사실 전달, 통계, 일정 안내"""
+[평가 기준]
+
+▸ sentiment (HTWO·수소 사업 관점에서):
+  - positive: 사업 성과·수출·투자·기술 진보·수상·우호적 정책
+  - negative: 실적 부진·비판·논란·사고·규제·경쟁 열세
+  - neutral: 단순 사실 전달·일정 안내·통계
+
+▸ sentiment_score: 감성 강도 (0.0=약함 ~ 1.0=매우 강함)
+
+▸ relevance_score: HTWO·수소 사업과의 관련성 강도
+  - 0.9~1.0: HTWO 또는 수소연료전지·수소차가 기사 메인 주제
+  - 0.6~0.8: 주요 비중으로 다루지만 다른 주제도 함께 등장
+  - 0.3~0.5: 일부 단락에서 부수적으로 언급
+  - 0.0~0.2: 거의 무관, 단발 언급 또는 전혀 등장 안 함
+
+▸ category: 정확히 다음 6개 중 하나를 선택
+  - "수소차/HTWO 직접": HTWO 사업·넥쏘·수소승용차 직접 보도
+  - "수소 모빌리티": 수소버스·수소트럭·수소철도·수소선박·충전소 인프라
+  - "EV/전기차": 아이오닉·전기차 단독 주제 (수소 무관)
+  - "자율주행": 자율주행·로보택시·AI 모빌리티 (수소 무관)
+  - "모빌리티 일반": 그룹 종합·미래 모빌리티 비전·복합 주제
+  - "기타": 그 외 (금융·정치·인사·기타 산업)
+"""
+)
+
+
+VALID_CATEGORIES = {
+    "수소차/HTWO 직접",
+    "수소 모빌리티",
+    "EV/전기차",
+    "자율주행",
+    "모빌리티 일반",
+    "기타",
+}
 
 
 def _parse_result(raw: str) -> dict:
@@ -46,15 +94,24 @@ def _parse_result(raw: str) -> dict:
             text = text[4:]
         text = text.strip()
     data = json.loads(text)
+
     sentiment = data.get("sentiment", "neutral")
     if sentiment not in ("positive", "negative", "neutral"):
         sentiment = "neutral"
+
+    category = data.get("category", "기타")
+    if category not in VALID_CATEGORIES:
+        category = "기타"
+
     return {
         "summary": str(data.get("summary", "")),
         "keywords": [str(k) for k in data.get("keywords", [])][:5],
         "sentiment": sentiment,
         "sentiment_score": float(data.get("sentiment_score", 0.5)),
         "sentiment_reason": str(data.get("sentiment_reason", "")),
+        "relevance_score": float(data.get("relevance_score", 0.5)),
+        "relevance_reason": str(data.get("relevance_reason", "")),
+        "category": category,
     }
 
 
@@ -96,8 +153,8 @@ def analyze_article(article: dict) -> dict | None:
 def analyze_articles(articles: list, delay: float = 8.0) -> list:
     """요청 간 8초 대기 + 429 시 자동 재시도"""
     total = len(articles)
-    success_count = 0
-    fail_count = 0
+    success = 0
+    fail = 0
 
     for i, article in enumerate(articles):
         log.info(f"  [{i + 1}/{total}] 분석: {article['title'][:45]}...")
@@ -105,14 +162,14 @@ def analyze_articles(articles: list, delay: float = 8.0) -> list:
         if result:
             article.update(result)
             article["analyzed"] = True
-            success_count += 1
+            success += 1
         else:
-            fail_count += 1
+            fail += 1
             log.warning(
                 f"  [FAIL] 미분석 처리 — {article['title'][:40]} | URL: {article.get('url', 'N/A')}"
             )
         if i < total - 1:
             time.sleep(delay)
 
-    log.info(f"분석 결과: 성공 {success_count}건, 실패 {fail_count}건")
+    log.info(f"분석 결과: 성공 {success}건, 실패 {fail}건")
     return articles

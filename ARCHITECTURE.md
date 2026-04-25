@@ -106,11 +106,26 @@ poc_server/
       "sentiment": "positive",
       "sentiment_score": 0.87,
       "sentiment_reason": "해외 시장 확대 성과를 긍정적으로 보도",
+      "relevance_score": 0.95,
+      "relevance_reason": "HTWO 사업이 기사 메인 주제",
+      "category": "수소차/HTWO 직접",
       "analyzed": true
     }
   ]
 }
 ```
+
+### 필드 설명
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `summary` | string | Gemini 요약 2-3문장 |
+| `keywords` | array | 핵심 키워드 5개 |
+| `sentiment` | enum | positive / negative / neutral |
+| `sentiment_score` | float (0-1) | 감성 강도 |
+| `sentiment_reason` | string | 감성 판단 근거 |
+| `relevance_score` | float (0-1) | HTWO·수소 사업과의 관련성 강도 |
+| `relevance_reason` | string | 관련성 판단 근거 |
+| `category` | enum | 수소차/HTWO 직접 / 수소 모빌리티 / EV/전기차 / 자율주행 / 모빌리티 일반 / 기타 |
 
 ---
 
@@ -145,6 +160,40 @@ poc_server/
 `Repo → Settings → Pages → Source: Deploy from branch → Branch: main / docs`
 
 배포 URL: `https://hyeyoung0214.github.io/poc_server/`
+
+---
+
+## Gemini 페르소나 & 분석 출력
+
+### 페르소나
+```
+시니어 미디어 애널리스트 (10년+ 자동차·에너지 산업 분석 경력).
+관심 영역: HTWO, 수소연료전지(FCEV), 수소 모빌리티, 충전 인프라.
+객관적·정밀한 JSON 분석 결과 제공.
+```
+
+### 분석 출력 (JSON 단일 호출)
+- 요약 (summary)
+- 키워드 5개 (keywords)
+- 감성 분류 + 점수 + 근거 (sentiment, sentiment_score, sentiment_reason)
+- **관련성 점수 + 근거** (relevance_score, relevance_reason)
+- **카테고리 분류** (category — 6종)
+
+---
+
+## 화이트/블랙리스트 사전 필터
+
+Gemini 호출 전 단계에서 제목·요약문 기준으로 필터링하여 비용 절감.
+
+| 입력 | 동작 |
+|------|------|
+| `WHITELIST` 환경변수 (쉼표 구분) | 1개 이상 매칭된 기사만 통과 |
+| `BLACKLIST` 환경변수 (쉼표 구분) | 하나라도 매칭되면 제외 |
+| 둘 다 빈 값 | 모든 기사 통과 (필터 없음) |
+
+워크플로 입력으로 전달 → `main.py`에서 환경변수 파싱 → `fetch_news.filter_articles()`.
+
+프론트엔드에서 입력하면 자동으로 클립보드에 복사되어 GitHub Actions UI에 붙여넣기 가능.
 
 ---
 

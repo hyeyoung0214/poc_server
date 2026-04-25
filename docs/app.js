@@ -18,9 +18,22 @@ const WORKFLOW_FILE = 'fetch_news.yml';
 let allArticles   = [];
 let activeKeywords = [...DEFAULT_KEYWORDS];   // keyword filter (OR match)
 let activeSentiment = 'all';
+let activeCategory  = 'all';
 let activePeriod    = 30;
 let activeSort      = 'date';
+let activeMinRelevance = 0.5;
 let charts = {};
+
+const CATEGORY_CSS_MAP = {
+  '수소차/HTWO 직접': 'cat-h2',
+  '수소 모빌리티':    'cat-mobility',
+  'EV/전기차':        'cat-ev',
+  '자율주행':         'cat-auto',
+  '모빌리티 일반':    'cat-general',
+  '기타':             'cat-etc',
+};
+
+const LS_RUN_PREFS = 'poc_run_prefs_v1';
 
 /* ===================== BOOT ===================== */
 document.addEventListener('DOMContentLoaded', () => {
@@ -71,6 +84,19 @@ function getFiltered() {
     arr = arr.filter(a => a.sentiment === activeSentiment);
   }
 
+  /* category */
+  if (activeCategory !== 'all') {
+    arr = arr.filter(a => (a.category || '기타') === activeCategory);
+  }
+
+  /* relevance (구버전 데이터에 relevance_score 없으면 통과시킴) */
+  if (activeMinRelevance > 0) {
+    arr = arr.filter(a => {
+      if (a.relevance_score == null) return true;
+      return a.relevance_score >= activeMinRelevance;
+    });
+  }
+
   /* keyword — 사용자가 추가한 키워드가 기사 제목/내용에 포함되는지 확인 */
   const customKws = activeKeywords.filter(k => !DEFAULT_KEYWORDS.includes(k));
   if (customKws.length > 0) {
@@ -84,6 +110,8 @@ function getFiltered() {
   /* sort */
   if (activeSort === 'date') {
     arr.sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+  } else if (activeSort === 'relevance_desc') {
+    arr.sort((a, b) => (b.relevance_score ?? 0) - (a.relevance_score ?? 0));
   } else if (activeSort === 'score_desc') {
     arr.sort((a, b) => (b.sentiment_score || 0) - (a.sentiment_score || 0));
   } else if (activeSort === 'score_asc') {
@@ -132,9 +160,16 @@ function renderArticles(articles) {
 }
 
 function buildCard(a) {
-  const sent    = a.sentiment || 'neutral';
-  const score   = typeof a.sentiment_score === 'number' ? a.sentiment_score : 0.5;
+  const sent     = a.sentiment || 'neutral';
+  const score    = typeof a.sentiment_score === 'number' ? a.sentiment_score : 0.5;
   const scorePct = Math.round(score * 100);
+
+  const cat      = a.category || '기타';
+  const catCss   = CATEGORY_CSS_MAP[cat] || 'cat-etc';
+
+  const rel      = typeof a.relevance_score === 'number' ? a.relevance_score : null;
+  const relPct   = rel != null ? Math.round(rel * 100) : null;
+  const relLevel = rel == null ? '' : (rel >= 0.7 ? 'relevance-high' : rel >= 0.4 ? 'relevance-mid' : 'relevance-low');
 
   const kwTags = (a.keywords || []).slice(0, 4)
     .map(k => `<span class="card-kw-tag">#${esc(k)}</span>`).join('');
@@ -143,21 +178,31 @@ function buildCard(a) {
     ? `<p class="card-summary">${esc(a.summary)}</p>`
     : (a.description ? `<p class="card-summary">${esc(a.description)}</p>` : '');
 
+  const relBlock = rel != null
+    ? `<div class="relevance-row ${relLevel}" title="${esc(a.relevance_reason || '')}">
+         <span>관련성</span>
+         <div class="relevance-bar"><div class="relevance-bar-fill" style="width:${relPct}%"></div></div>
+         <span>${relPct}%</span>
+       </div>`
+    : '';
+
   return `
 <div class="article-card ${esc(sent)}">
   <div class="card-meta">
     <span class="card-source">${esc(a.source || '알 수 없음')}</span>
     <span class="card-date">${esc(a.published_at || '')}</span>
+    <span class="card-category ${catCss}">${esc(cat)}</span>
     <span class="card-keyword">${esc(a.search_keyword || '')}</span>
   </div>
   <h4 class="card-title">
     <a href="${esc(a.url)}" target="_blank" rel="noopener">${esc(a.title)}</a>
   </h4>
   ${summary}
+  ${relBlock}
   <div class="card-footer">
     <div class="card-keywords-wrap">${kwTags}</div>
     <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px">
-      <span class="badge ${esc(sent)}">
+      <span class="badge ${esc(sent)}" title="${esc(a.sentiment_reason || '')}">
         ${SENTIMENT_EMOJI[sent]} ${SENTIMENT_LABEL[sent]}
       </span>
       <div class="score-bar-wrap">
@@ -345,6 +390,16 @@ function initFilters() {
     applyFilters();
   });
 
+  /* relevance threshold */
+  const relSel = document.getElementById('filter-relevance');
+  if (relSel) {
+    activeMinRelevance = parseFloat(relSel.value);
+    relSel.addEventListener('change', e => {
+      activeMinRelevance = parseFloat(e.target.value);
+      applyFilters();
+    });
+  }
+
   /* sentiment buttons */
   document.getElementById('sentiment-btns').addEventListener('click', e => {
     const btn = e.target.closest('.filter-btn');
@@ -354,6 +409,19 @@ function initFilters() {
     activeSentiment = btn.dataset.v;
     applyFilters();
   });
+
+  /* category buttons */
+  const catBtns = document.getElementById('category-btns');
+  if (catBtns) {
+    catBtns.addEventListener('click', e => {
+      const btn = e.target.closest('.filter-btn');
+      if (!btn) return;
+      catBtns.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activeCategory = btn.dataset.cat;
+      applyFilters();
+    });
+  }
 
   /* keyword add */
   const input = document.getElementById('keyword-input');
@@ -394,18 +462,41 @@ function renderKeywordTags() {
 
 /* ===================== RUN PANEL ===================== */
 function initRunPanel() {
-  const panel       = document.getElementById('run-panel');
-  const openBtn     = document.getElementById('btn-run-analysis');
-  const closeBtn    = document.getElementById('run-close');
-  const goBtn       = document.getElementById('btn-run-go');
-  const extraInput  = document.getElementById('run-extra-kws');
-  const resetBox    = document.getElementById('run-reset');
+  const panel        = document.getElementById('run-panel');
+  const openBtn      = document.getElementById('btn-run-analysis');
+  const closeBtn     = document.getElementById('run-close');
+  const goBtn        = document.getElementById('btn-run-go');
+  const extraInput   = document.getElementById('run-extra-kws');
+  const whiteInput   = document.getElementById('run-whitelist');
+  const blackInput   = document.getElementById('run-blacklist');
+  const resetBox     = document.getElementById('run-reset');
 
   /* 기본 키워드 표시 */
   const defaultKwsBox = document.getElementById('run-default-kws');
   defaultKwsBox.innerHTML = DEFAULT_KEYWORDS
     .map(k => `<span class="keyword-tag">${esc(k)}</span>`)
     .join('');
+
+  /* localStorage에서 이전 입력값 복원 */
+  try {
+    const saved = JSON.parse(localStorage.getItem(LS_RUN_PREFS) || '{}');
+    if (saved.extra)     extraInput.value = saved.extra;
+    if (saved.whitelist) whiteInput.value = saved.whitelist;
+    if (saved.blacklist) blackInput.value = saved.blacklist;
+  } catch {}
+
+  /* 입력 변경 시 자동 저장 */
+  const savePrefs = () => {
+    const prefs = {
+      extra: extraInput.value.trim(),
+      whitelist: whiteInput.value.trim(),
+      blacklist: blackInput.value.trim(),
+    };
+    localStorage.setItem(LS_RUN_PREFS, JSON.stringify(prefs));
+  };
+  [extraInput, whiteInput, blackInput].forEach(el => {
+    el.addEventListener('input', savePrefs);
+  });
 
   /* 패널 열기 */
   openBtn.addEventListener('click', () => {
@@ -419,38 +510,47 @@ function initRunPanel() {
     panel.hidden = true;
   });
 
-  /* 분석 실행 — workflow_dispatch URL 생성 후 새 탭 */
-  goBtn.addEventListener('click', () => {
-    const extra = extraInput.value.trim();
-    const reset = resetBox.checked;
+  /* 분석 실행 — workflow_dispatch UI 열기 + 입력값 클립보드 자동 복사 */
+  goBtn.addEventListener('click', async () => {
+    const extra     = extraInput.value.trim();
+    const whitelist = whiteInput.value.trim();
+    const blacklist = blackInput.value.trim();
+    const reset     = resetBox.checked;
+
+    savePrefs();
 
     /* GitHub Actions workflow_dispatch UI URL */
     const url = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${WORKFLOW_FILE}`;
     window.open(url, '_blank', 'noopener');
 
-    /* 사용자 입력값 클립보드 복사 안내 */
-    const message = [
+    /* 입력값을 한꺼번에 클립보드에 복사 (사용자가 분기별 input란에 붙여넣을 수 있게) */
+    const clipText = [
+      extra     && `[추가 키워드]   ${extra}`,
+      whitelist && `[필수 포함]    ${whitelist}`,
+      blacklist && `[제외 단어]    ${blacklist}`,
+      reset     && `[초기화]      체크 활성화`,
+    ].filter(Boolean).join('\n');
+
+    if (clipText && navigator.clipboard) {
+      navigator.clipboard.writeText(clipText).catch(() => {});
+    }
+
+    /* 사용자 안내 */
+    const lines = [
       '✅ GitHub Actions 페이지가 열렸습니다.',
       '',
-      '다음 순서로 진행하세요:',
-      '1. 우측 상단 [Run workflow] 버튼 클릭',
-      extra
-        ? `2. "추가 검색 키워드" 입력란에 다음을 붙여넣기:\n   ${extra}`
-        : '2. (추가 키워드 없음 — 기본만 분석)',
-      reset
-        ? '3. "기존 데이터 초기화" 체크박스 선택'
-        : '3. 초기화 옵션 비활성 (기존 데이터에 추가)',
-      '4. 초록색 [Run workflow] 버튼 최종 클릭',
+      '아래 순서로 진행하세요:',
+      '1. 우측 상단 [Run workflow] 클릭',
+      extra     ? `2. "추가 검색 키워드"란 → ${extra}` : '2. 추가 키워드 없음',
+      whitelist ? `3. "필수 포함 단어"란 → ${whitelist}` : '3. whitelist 없음',
+      blacklist ? `4. "제외 단어"란 → ${blacklist}`     : '4. blacklist 없음',
+      reset     ? '5. "기존 데이터 초기화" 체크' : '5. 초기화 미사용',
+      '6. 초록색 [Run workflow] 클릭',
       '',
-      '실행 시작 후 약 5~15분 뒤 새로고침하면 결과가 반영됩니다.',
-    ].join('\n');
-
-    alert(message);
-
-    /* 추가 키워드를 클립보드에 자동 복사 (있을 경우) */
-    if (extra && navigator.clipboard) {
-      navigator.clipboard.writeText(extra).catch(() => {});
-    }
+      '※ 위 입력값은 자동으로 클립보드에 복사되었습니다.',
+      '※ 분석은 약 5~15분 소요되며, 완료 후 페이지 새로고침 시 반영됩니다.',
+    ];
+    alert(lines.join('\n'));
   });
 
   /* ESC 키로 닫기 */
