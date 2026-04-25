@@ -24,16 +24,54 @@
       </div>
       <div class="header-right">
         <span class="last-updated" id="last-updated">데이터 로딩 중…</span>
-        <a class="btn-actions"
-           href="https://github.com/hyeyoung0214/poc_server/actions"
-           target="_blank" rel="noopener">
-          Actions ↗
-        </a>
+        <button class="btn-run" id="btn-run-analysis" type="button">
+          📊 분석 시작
+        </button>
       </div>
     </div>
   </header>
 
   <main class="main">
+
+    <!-- ===== ANALYSIS REQUEST PANEL ===== -->
+    <section class="run-panel" id="run-panel" hidden>
+      <div class="run-panel-inner">
+        <div class="run-panel-head">
+          <h3>분석 요청</h3>
+          <button class="run-close" id="run-close" type="button" aria-label="닫기">×</button>
+        </div>
+
+        <div class="run-field">
+          <label>기본 키워드 (항상 분석됨)</label>
+          <div class="run-default-kws" id="run-default-kws"></div>
+        </div>
+
+        <div class="run-field">
+          <label for="run-extra-kws">
+            추가 키워드 <span class="run-hint">(쉼표로 구분, 비워두면 기본만)</span>
+          </label>
+          <input type="text" id="run-extra-kws"
+                 placeholder="예: 수소버스, 수소트럭, 넥쏘" />
+        </div>
+
+        <div class="run-field">
+          <label class="run-checkbox">
+            <input type="checkbox" id="run-reset" />
+            <span>기존 데이터 초기화 후 새로 시작</span>
+          </label>
+        </div>
+
+        <div class="run-actions">
+          <button class="btn-run-go" id="btn-run-go" type="button">
+            🚀 GitHub Actions에서 실행
+          </button>
+          <p class="run-note">
+            ※ 클릭 시 GitHub Actions 페이지가 새 탭으로 열립니다.<br>
+            "Run workflow" 버튼을 누르면 분석이 시작됩니다 (약 5~15분 소요).
+          </p>
+        </div>
+      </div>
+    </section>
 
     <!-- ===== STATS ===== -->
     <section class="stats-grid">
@@ -149,7 +187,7 @@
   </main>
 
   <footer class="footer">
-    <p>데이터 출처: 네이버 뉴스 &nbsp;|&nbsp; 분석: Google Gemini 1.5 Flash &nbsp;|&nbsp; 자동 업데이트: 6시간마다 (KST 9·15·21·3시)</p>
+    <p>데이터 출처: 네이버 뉴스 &nbsp;|&nbsp; 분석: Google Gemini &nbsp;|&nbsp; 사용자 트리거 방식 (상단 [📊 분석 시작] 클릭)</p>
   </footer>
 
   <script src="app.js"></script>

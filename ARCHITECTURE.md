@@ -11,7 +11,7 @@
 | 역할 | 기술 | 비용 |
 |------|------|------|
 | 호스팅 | GitHub Pages (`docs/` 폴더) | 무료 |
-| 자동화 서버 | GitHub Actions (6시간 cron) | 무료 (월 2,000분) |
+| 실행 서버 | GitHub Actions (사용자 트리거 — workflow_dispatch) | 무료 (월 2,000분) |
 | 뉴스 수집 | Naver Search API | 무료 (일 25,000건) |
 | AI 분석 | Google Gemini 1.5 Flash | 무료 (일 1M 토큰, 15 RPM) |
 | 데이터 저장 | JSON 파일 in GitHub repo | 무료 |
@@ -49,7 +49,16 @@ poc_server/
 ## 데이터 흐름
 
 ```
-[GitHub Actions Cron — 0, 6, 12, 18시 UTC]
+[사용자가 대시보드의 「📊 분석 시작」 버튼 클릭]
+         │
+         ├─ 추가 키워드 입력 (옵션)
+         ├─ 기존 데이터 초기화 체크 (옵션)
+         │
+         ▼
+[GitHub Actions workflow_dispatch UI — 새 탭으로 자동 이동]
+         │
+         ├─ extra_keywords 입력란에 사용자 키워드 붙여넣기
+         └─ [Run workflow] 클릭
          │
          ▼
 [scripts/main.py]
@@ -153,8 +162,8 @@ poc_server/
 
 | 항목 | 제한 | 대응 |
 |------|------|------|
-| Gemini 무료 티어 | 15 RPM | 기사당 4.5초 대기 |
-| Naver Search API | 일 25,000건 | 6시간 주기, 키워드당 30건 |
+| Gemini API Rate Limit | 모델별 RPM 제한 | 기사당 8초 대기 + 429 자동 재시도 |
+| Naver Search API | 일 25,000건 | 사용자 트리거, 키워드당 30건 |
 | GitHub Pages | 정적 파일만 서빙 | JSON 파일로 데이터 전달 |
 | articles.json | 최대 500건 유지 | 오래된 기사 자동 삭제 |
 
@@ -164,7 +173,9 @@ poc_server/
 
 | 수정 내용 | 파일 |
 |-----------|------|
-| 검색 키워드 추가/변경 | `scripts/keywords.json` |
+| 검색 키워드 추가/변경 (영구) | `scripts/keywords.json` |
+| 검색 키워드 추가 (1회) | 대시보드 「📊 분석 시작」 → 추가 키워드 입력 |
+| 실행 트리거 변경 | `.github/workflows/fetch_news.yml` → `on:` 섹션 |
 | 분석 프롬프트 변경 | `scripts/analyze.py` → `PROMPT_TEMPLATE` |
 | 수집 기사 수 조정 | `scripts/fetch_news.py` → `display` 파라미터 |
 | 실행 주기 변경 | `.github/workflows/fetch_news.yml` → `cron` |

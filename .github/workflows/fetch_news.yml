@@ -1,9 +1,19 @@
 name: Fetch & Analyze News
 
+# 사용자 트리거 전용 — 자동 스케줄 제거됨
 on:
-  schedule:
-    - cron: "0 0,6,12,18 * * *"   # UTC 0·6·12·18시 (KST 9·15·21·3시)
-  workflow_dispatch:               # GitHub UI에서 수동 실행 가능
+  workflow_dispatch:
+    inputs:
+      extra_keywords:
+        description: "추가 검색 키워드 (쉼표로 구분, 비워두면 기본값만 사용)"
+        required: false
+        default: ""
+        type: string
+      reset_data:
+        description: "기존 articles.json 초기화 후 새로 시작"
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -26,12 +36,19 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Reset articles.json (옵션 활성화 시)
+        if: ${{ inputs.reset_data == true }}
+        run: |
+          echo '{"last_updated":"","total":0,"articles":[]}' > docs/data/articles.json
+          echo "기존 데이터 초기화 완료"
+
       - name: Fetch news and analyze
         working-directory: scripts
         env:
           NAVER_CLIENT_ID: ${{ secrets.NAVER_CLIENT_ID }}
           NAVER_CLIENT_SECRET: ${{ secrets.NAVER_CLIENT_SECRET }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          EXTRA_KEYWORDS: ${{ inputs.extra_keywords }}
           PYTHONIOENCODING: utf-8
         run: python main.py
 
@@ -49,5 +66,5 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data/articles.json
-          git diff --staged --quiet || git commit -m "data: 뉴스 업데이트 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          git diff --staged --quiet || git commit -m "data: 사용자 분석 요청 $(date -u +'%Y-%m-%d %H:%M UTC')"
           git push

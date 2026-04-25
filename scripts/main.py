@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -27,9 +28,25 @@ def load_existing() -> list:
 
 
 def load_keywords() -> list:
+    """기본 키워드 + EXTRA_KEYWORDS 환경 변수(쉼표 구분) 병합 — 중복 제거"""
     with open(KEYWORDS_PATH, encoding="utf-8") as f:
         data = json.load(f)
-    return data.get("default", []) + data.get("custom", [])
+    keywords = data.get("default", []) + data.get("custom", [])
+
+    extra = os.environ.get("EXTRA_KEYWORDS", "").strip()
+    if extra:
+        extra_list = [k.strip() for k in extra.split(",") if k.strip()]
+        log.info(f"사용자 추가 키워드: {extra_list}")
+        keywords += extra_list
+
+    # 중복 제거 (순서 유지)
+    seen = set()
+    deduped = []
+    for k in keywords:
+        if k not in seen:
+            seen.add(k)
+            deduped.append(k)
+    return deduped
 
 
 def save_articles(articles: list) -> None:

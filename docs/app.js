@@ -10,6 +10,10 @@ const SENTIMENT_EMOJI  = { positive: '😊', negative: '😟', neutral: '😐' }
 
 const DEFAULT_KEYWORDS = ['현대 수소차', 'HTWO', '현대자동차 수소연료전지'];
 
+const REPO_OWNER = 'hyeyoung0214';
+const REPO_NAME  = 'poc_server';
+const WORKFLOW_FILE = 'fetch_news.yml';
+
 /* ----- state ----- */
 let allArticles   = [];
 let activeKeywords = [...DEFAULT_KEYWORDS];   // keyword filter (OR match)
@@ -22,6 +26,7 @@ let charts = {};
 document.addEventListener('DOMContentLoaded', () => {
   initFilters();
   renderKeywordTags();
+  initRunPanel();
   loadData();
 });
 
@@ -384,5 +389,72 @@ function renderKeywordTags() {
       renderKeywordTags();
       applyFilters();
     });
+  });
+}
+
+/* ===================== RUN PANEL ===================== */
+function initRunPanel() {
+  const panel       = document.getElementById('run-panel');
+  const openBtn     = document.getElementById('btn-run-analysis');
+  const closeBtn    = document.getElementById('run-close');
+  const goBtn       = document.getElementById('btn-run-go');
+  const extraInput  = document.getElementById('run-extra-kws');
+  const resetBox    = document.getElementById('run-reset');
+
+  /* 기본 키워드 표시 */
+  const defaultKwsBox = document.getElementById('run-default-kws');
+  defaultKwsBox.innerHTML = DEFAULT_KEYWORDS
+    .map(k => `<span class="keyword-tag">${esc(k)}</span>`)
+    .join('');
+
+  /* 패널 열기 */
+  openBtn.addEventListener('click', () => {
+    panel.hidden = false;
+    panel.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    extraInput.focus();
+  });
+
+  /* 패널 닫기 */
+  closeBtn.addEventListener('click', () => {
+    panel.hidden = true;
+  });
+
+  /* 분석 실행 — workflow_dispatch URL 생성 후 새 탭 */
+  goBtn.addEventListener('click', () => {
+    const extra = extraInput.value.trim();
+    const reset = resetBox.checked;
+
+    /* GitHub Actions workflow_dispatch UI URL */
+    const url = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${WORKFLOW_FILE}`;
+    window.open(url, '_blank', 'noopener');
+
+    /* 사용자 입력값 클립보드 복사 안내 */
+    const message = [
+      '✅ GitHub Actions 페이지가 열렸습니다.',
+      '',
+      '다음 순서로 진행하세요:',
+      '1. 우측 상단 [Run workflow] 버튼 클릭',
+      extra
+        ? `2. "추가 검색 키워드" 입력란에 다음을 붙여넣기:\n   ${extra}`
+        : '2. (추가 키워드 없음 — 기본만 분석)',
+      reset
+        ? '3. "기존 데이터 초기화" 체크박스 선택'
+        : '3. 초기화 옵션 비활성 (기존 데이터에 추가)',
+      '4. 초록색 [Run workflow] 버튼 최종 클릭',
+      '',
+      '실행 시작 후 약 5~15분 뒤 새로고침하면 결과가 반영됩니다.',
+    ].join('\n');
+
+    alert(message);
+
+    /* 추가 키워드를 클립보드에 자동 복사 (있을 경우) */
+    if (extra && navigator.clipboard) {
+      navigator.clipboard.writeText(extra).catch(() => {});
+    }
+  });
+
+  /* ESC 키로 닫기 */
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && !panel.hidden) panel.hidden = true;
   });
 }
