@@ -43,6 +43,12 @@ on:
 permissions:
   contents: write
 
+# 동시 실행 직렬화 — 두 사용자가 거의 동시에 트리거해도
+# articles.json git push 충돌(non-fast-forward)이 발생하지 않도록 큐에 대기
+concurrency:
+  group: fetch-news
+  cancel-in-progress: false
+
 jobs:
   fetch-and-analyze:
     runs-on: ubuntu-latest
@@ -96,5 +102,21 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add docs/data/articles.json
-          git diff --staged --quiet || git commit -m "data: 사용자 분석 요청 $(date -u +'%Y-%m-%d %H:%M UTC')"
-          git push
+          # 변경 없으면 종료 (의도적 0 exit)
+          if git diff --staged --quiet; then
+            echo "[push] no changes to commit"
+            exit 0
+          fi
+          git commit -m "data: 사용자 분석 요청 $(date -u +'%Y-%m-%d %H:%M UTC')"
+          # push 실패(non-fast-forward 등) 시 rebase 후 최대 3회 재시도
+          for i in 1 2 3; do
+            if git push; then
+              echo "[push] success on attempt $i"
+              exit 0
+            fi
+            echo "[push] attempt $i failed — rebasing onto origin/main and retrying..."
+            git fetch origin main
+            git pull --rebase origin main || { echo "[push] rebase 충돌 — 중단"; exit 1; }
+          done
+          echo "[push] 3회 재시도 모두 실패"
+          exit 1
