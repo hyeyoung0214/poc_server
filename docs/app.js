@@ -90,11 +90,15 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ===================== DATA ===================== */
-async function loadData() {
+async function loadData(retryCount = 0) {
+  const MAX_RETRIES = 2;       // 0,1,2 = 총 3회
+  const RETRY_DELAY_MS = 3000;
   try {
     const res = await fetch(DATA_URL + '?t=' + Date.now());
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
+
+    log('INFO', `[loadData] 성공 — total=${data.total}, last_updated=${data.last_updated}`);
 
     const ts = data.last_updated;
     document.getElementById('last-updated').textContent =
@@ -104,6 +108,13 @@ async function loadData() {
     applyFilters();
     buildCharts();
   } catch (e) {
+    log('WARN', `[loadData] 시도 ${retryCount + 1}/${MAX_RETRIES + 1} 실패: ${e.message}`);
+    if (retryCount < MAX_RETRIES) {
+      /* CDN 갱신 중일 수 있으므로 잠시 후 재시도 */
+      await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+      return loadData(retryCount + 1);
+    }
+    log('ERROR', '[loadData] 모든 재시도 실패 — 에러 화면 표시');
     document.getElementById('articles-grid').innerHTML =
       `<div class="error-state">
         데이터를 불러오지 못했습니다.<br>
@@ -312,6 +323,12 @@ function esc(str) {
 
 /* ===================== CHARTS ===================== */
 function buildCharts() {
+  /* 재호출 시 Canvas 중복 에러 방지 — 기존 차트 모두 destroy */
+  Object.values(charts).forEach(c => {
+    try { c && c.destroy(); } catch (e) { log('WARN', '[buildCharts] destroy 실패:', e); }
+  });
+  charts = {};
+
   const arr = getFiltered();
 
   /* sentiment donut */
