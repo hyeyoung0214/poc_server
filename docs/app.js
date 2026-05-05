@@ -645,13 +645,26 @@ function initRunPanel() {
   autoBtn.addEventListener('click', async () => {
     savePrefs();
     const inputs = buildInputs();
-    const pat = getPat();
-    if (!pat) {
+
+    /* 저장된 PAT 검증 — 비ASCII가 섞였거나 sanitize 후 빈 값이면 모달 띄우기 */
+    const rawPat = getPat();
+    const pat = sanitizeAscii(rawPat);
+    if (!pat || !isValidPat(pat)) {
+      if (rawPat) {
+        log('WARN', `[autoBtn] 저장된 PAT 손상 (raw ${rawPat.length}자 → sanitized ${pat.length}자) — 자동 삭제 후 재등록 요청`);
+        setPatStored('');
+      } else {
+        log('INFO', '[autoBtn] PAT 미등록 — 모달 표시');
+      }
       openPatModal(() => startAutoRun(inputs));
-    } else {
-      panel.hidden = true;
-      await startAutoRun(inputs);
+      return;
     }
+    if (rawPat !== pat) {
+      log('WARN', '[autoBtn] PAT 자동 정리됨 — 정리된 값으로 재저장');
+      setPatStored(pat);
+    }
+    panel.hidden = true;
+    await startAutoRun(inputs);
   });
 
   /* === 수동 실행 === */
