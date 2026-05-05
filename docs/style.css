@@ -1,5 +1,7 @@
 /* ===== RESET & BASE ===== */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* HTML5 hidden 속성을 클래스 셀렉터(display: flex 등)가 덮어쓰지 않도록 강제 */
+[hidden] { display: none !important; }
 
 :root {
   --blue:    #003C8F;
