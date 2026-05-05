@@ -17,7 +17,7 @@ from analyze import analyze_articles
 ROOT = Path(__file__).resolve().parent.parent
 ARTICLES_PATH = ROOT / "docs" / "data" / "articles.json"
 KEYWORDS_PATH = Path(__file__).resolve().parent / "keywords.json"
-MAX_ARTICLES = 500
+MAX_ARTICLES = 2000   # 옛 기사 누적용 — Naver API 1000/키워드 한계 + 누적 분석 고려
 
 
 def load_existing() -> list:
