@@ -273,6 +273,10 @@
     <section class="articles-section">
       <div class="articles-header">
         <h3>기사 목록 <span class="articles-count" id="articles-count"></span></h3>
+        <div class="excluded-info" id="excluded-info" hidden>
+          <span id="excluded-count">제외 0건</span>
+          <button class="btn-link-sm" id="btn-restore-all" type="button">전체 복원</button>
+        </div>
       </div>
       <div class="articles-grid" id="articles-grid">
         <div class="loading-state">
@@ -368,6 +372,7 @@
   <div class="toast" id="toast" hidden>
     <span class="toast-icon">✅</span>
     <span class="toast-text" id="toast-text">완료</span>
+    <button class="toast-undo" id="toast-undo" type="button" hidden>↩️ 되돌리기</button>
   </div>
 
   <script src="app.js"></script>

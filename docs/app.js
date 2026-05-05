@@ -35,8 +35,9 @@ const CATEGORY_CSS_MAP = {
   '기타':             'cat-etc',
 };
 
-const LS_RUN_PREFS = 'poc_run_prefs_v1';
-const LS_PAT       = 'poc_github_pat_v1';
+const LS_RUN_PREFS    = 'poc_run_prefs_v1';
+const LS_PAT          = 'poc_github_pat_v1';
+const LS_EXCLUDED_IDS = 'poc_excluded_ids_v1';
 
 const POLL_INTERVAL_MS = 8000;   // 8초마다 폴링
 const MAX_POLL_MIN     = 15;     // 15분 타임아웃
@@ -48,6 +49,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initRunPanel();
   initPatModal();
   initProgressModal();
+  initExcludeFeature();
   loadData();
 });
 
@@ -78,7 +80,9 @@ async function loadData() {
 
 /* ===================== FILTER ===================== */
 function getFiltered() {
-  let arr = [...allArticles];
+  /* 사용자가 제외한 기사 — 모든 통계/차트/카드에서 빠짐 */
+  const excluded = getExcludedIds();
+  let arr = allArticles.filter(a => !excluded.has(a.id));
 
   /* period */
   if (activePeriod === 'custom') {
@@ -137,6 +141,7 @@ function applyFilters() {
   renderStats(filtered);
   renderDefaultKeywordStats(filtered);
   renderArticles(filtered);
+  renderExcludedInfo();
   if (Object.keys(charts).length) updateCharts(filtered);
 }
 
@@ -232,7 +237,9 @@ function buildCard(a) {
     : '';
 
   return `
-<div class="article-card ${esc(sent)}">
+<div class="article-card ${esc(sent)}" data-id="${esc(a.id)}">
+  <button class="btn-exclude" data-id="${esc(a.id)}" type="button"
+          title="이 기사를 분석에서 제외" aria-label="기사 제외">×</button>
   <div class="card-meta">
     <span class="card-source">${esc(a.source || '알 수 없음')}</span>
     <span class="card-date">${esc(a.published_at || '')}</span>
@@ -704,13 +711,112 @@ function initPatModal() {
 }
 
 /* ===================== TOAST ===================== */
-let _toastTimer = null;
-function showToast(msg, durMs = 3500) {
-  const t = document.getElementById('toast');
+let _toastTimer  = null;
+let _toastUndoCb = null;
+
+function showToast(msg, durMs = 3500, undoCb = null) {
+  const t       = document.getElementById('toast');
+  const undoBtn = document.getElementById('toast-undo');
   document.getElementById('toast-text').textContent = msg;
+
+  _toastUndoCb = undoCb || null;
+  if (undoBtn) undoBtn.hidden = !undoCb;
+
   t.hidden = false;
   if (_toastTimer) clearTimeout(_toastTimer);
-  _toastTimer = setTimeout(() => { t.hidden = true; }, durMs);
+  _toastTimer = setTimeout(() => {
+    t.hidden = true;
+    if (undoBtn) undoBtn.hidden = true;
+    _toastUndoCb = null;
+  }, durMs);
+}
+
+/* ===================== EXCLUDE (분석 제외) ===================== */
+function getExcludedIds() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(LS_EXCLUDED_IDS) || '[]'));
+  } catch { return new Set(); }
+}
+function setExcludedIds(set) {
+  localStorage.setItem(LS_EXCLUDED_IDS, JSON.stringify([...set]));
+}
+function addExcludedId(id) {
+  const s = getExcludedIds();
+  s.add(id);
+  setExcludedIds(s);
+}
+function removeExcludedId(id) {
+  const s = getExcludedIds();
+  s.delete(id);
+  setExcludedIds(s);
+}
+function clearExcludedIds() {
+  localStorage.removeItem(LS_EXCLUDED_IDS);
+}
+
+function excludeArticle(id) {
+  const article = allArticles.find(a => a.id === id);
+  if (!article) return;
+  addExcludedId(id);
+  applyFilters();
+  const titleShort = (article.title || '').slice(0, 28);
+  showToast(`🗑️ 제외됨 — ${titleShort}${article.title.length > 28 ? '…' : ''}`, 5000, () => {
+    removeExcludedId(id);
+    applyFilters();
+    showToast('↩️ 복원되었습니다');
+  });
+}
+
+function renderExcludedInfo() {
+  const wrap = document.getElementById('excluded-info');
+  if (!wrap) return;
+  const count = getExcludedIds().size;
+  if (count > 0) {
+    wrap.hidden = false;
+    document.getElementById('excluded-count').textContent = `제외 ${count}건`;
+  } else {
+    wrap.hidden = true;
+  }
+}
+
+function initExcludeFeature() {
+  /* 카드 × 버튼 — 이벤트 위임 */
+  const grid = document.getElementById('articles-grid');
+  if (grid) {
+    grid.addEventListener('click', e => {
+      const btn = e.target.closest('.btn-exclude');
+      if (!btn) return;
+      e.preventDefault();
+      e.stopPropagation();
+      excludeArticle(btn.dataset.id);
+    });
+  }
+
+  /* 전체 복원 */
+  const restoreBtn = document.getElementById('btn-restore-all');
+  if (restoreBtn) {
+    restoreBtn.addEventListener('click', () => {
+      const count = getExcludedIds().size;
+      if (count === 0) return;
+      if (!confirm(`제외한 ${count}건을 모두 복원하시겠습니까?`)) return;
+      clearExcludedIds();
+      applyFilters();
+      showToast('↩️ 모두 복원되었습니다');
+    });
+  }
+
+  /* 토스트 되돌리기 버튼 */
+  const undoBtn = document.getElementById('toast-undo');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      const cb = _toastUndoCb;
+      _toastUndoCb = null;
+      document.getElementById('toast').hidden = true;
+      undoBtn.hidden = true;
+      if (_toastTimer) clearTimeout(_toastTimer);
+      if (cb) cb();
+    });
+  }
 }
 
 /* ===================== GITHUB API CLIENT ===================== */
