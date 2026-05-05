@@ -335,36 +335,35 @@
     </div>
   </div>
 
-  <!-- ===== PROGRESS MODAL ===== -->
-  <div class="modal-overlay" id="progress-modal" hidden>
-    <div class="modal modal--md">
-      <div class="modal-head">
-        <h3>📊 분석 진행 중</h3>
-        <span class="elapsed-badge" id="progress-elapsed">0초</span>
+  <!-- ===== PROGRESS WIDGET (백그라운드 진행) ===== -->
+  <div class="progress-widget" id="progress-modal" hidden>
+    <div class="pw-head">
+      <span class="pw-title">📊 분석 진행 중</span>
+      <span class="elapsed-badge" id="progress-elapsed">0초</span>
+    </div>
+    <div class="pw-body">
+      <div class="pw-progress-row">
+        <div class="pw-bar"><div class="pw-bar-fill" id="progress-bar-fill"></div></div>
+        <span class="pw-pct" id="progress-pct">0%</span>
       </div>
-      <div class="modal-body">
-        <div class="progress-status">
-          <div class="status-icon spinner-sm" id="progress-icon"></div>
-          <div class="status-text" id="progress-text">워크플로 시작 중…</div>
-        </div>
-        <ol class="step-list" id="step-list">
-          <li class="step pending" data-step="trigger">워크플로 트리거</li>
-          <li class="step pending" data-step="queued">실행 큐 등록</li>
-          <li class="step pending" data-step="setup">환경 설정 (Python · 의존성)</li>
-          <li class="step pending" data-step="analyze">뉴스 수집 + AI 분석</li>
-          <li class="step pending" data-step="commit">결과 저장 및 push</li>
-          <li class="step pending" data-step="reload">대시보드 갱신</li>
-        </ol>
-        <p class="progress-note" id="progress-note">
-          예상 소요: 1~3분 · GitHub Actions와 실시간 동기화 중
-        </p>
+      <div class="progress-status">
+        <div class="status-icon spinner-sm" id="progress-icon"></div>
+        <div class="status-text" id="progress-text">워크플로 시작 중…</div>
       </div>
-      <div class="modal-foot">
-        <a class="btn-link" id="progress-actions-link"
-           href="#" target="_blank" rel="noopener">GitHub Actions에서 보기 ↗</a>
-        <div class="modal-foot-spacer"></div>
-        <button class="btn-secondary" id="progress-close" hidden>닫기</button>
-      </div>
+      <ol class="step-list" id="step-list">
+        <li class="step pending" data-step="trigger">워크플로 트리거</li>
+        <li class="step pending" data-step="queued">실행 큐 등록</li>
+        <li class="step pending" data-step="setup">환경 설정</li>
+        <li class="step pending" data-step="analyze">뉴스 수집 + AI 분석</li>
+        <li class="step pending" data-step="commit">결과 저장 및 push</li>
+        <li class="step pending" data-step="reload">대시보드 갱신</li>
+      </ol>
+    </div>
+    <div class="pw-foot">
+      <a class="btn-link" id="progress-actions-link"
+         href="#" target="_blank" rel="noopener">Actions ↗</a>
+      <div class="pw-foot-spacer"></div>
+      <button class="btn-link" id="progress-close" type="button" hidden>닫기 ✕</button>
     </div>
   </div>
 

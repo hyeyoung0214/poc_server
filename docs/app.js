@@ -940,6 +940,35 @@ function fmtElapsed(ms) {
   return `${m}분 ${s}초`;
 }
 
+/* 단계별 시작 퍼센트 — analyze는 시간 기반으로 25→85% 점근 */
+const STAGE_BASE_PERCENT = {
+  trigger: 5,
+  queued:  12,
+  setup:   22,
+  analyze: 25,
+  commit:  88,
+  reload:  95,
+};
+
+function setProgressPercent(percent) {
+  const fill = document.getElementById('progress-bar-fill');
+  const pctEl = document.getElementById('progress-pct');
+  if (!fill || !pctEl) return;
+  const clamped = Math.max(0, Math.min(100, percent));
+  fill.style.width = clamped + '%';
+  pctEl.textContent = Math.round(clamped) + '%';
+}
+
+function calcStageProgress(stage, analyzeStartedAt) {
+  if (stage === 'analyze' && analyzeStartedAt) {
+    /* 25% → 85%로 점근 (1 - exp(-t/45)) — 30초:~58%, 60초:~74%, 90초:~82% */
+    const sec = (Date.now() - analyzeStartedAt) / 1000;
+    const ratio = 1 - Math.exp(-sec / 45);
+    return 25 + 60 * ratio;
+  }
+  return STAGE_BASE_PERCENT[stage] || 0;
+}
+
 /* GitHub Actions step 이름 → UI 단계 매핑 */
 function mapStepToUiStage(stepName) {
   const n = (stepName || '').toLowerCase();
@@ -955,16 +984,25 @@ function mapStepToUiStage(stepName) {
 async function startAutoRun(inputs) {
   openProgressModal();
   const start = Date.now();
+  let lastStage = 'trigger';
+  let analyzeStartedAt = null;
+  setProgressPercent(2);
 
-  /* 경과 시간 타이머 */
+  /* 경과시간 + 진행률 통합 타이머 (1초마다) */
   const timer = setInterval(() => {
     document.getElementById('progress-elapsed').textContent = fmtElapsed(Date.now() - start);
+    setProgressPercent(calcStageProgress(lastStage, analyzeStartedAt));
   }, 1000);
 
   const finish = (status, msg) => {
     clearInterval(timer);
     setProgressStatus(msg, status);
     document.getElementById('progress-close').hidden = false;
+    /* 성공 시 5초 후 위젯 자동 닫힘 — 백그라운드 진행 자연스럽게 마무리 */
+    if (status === 'success') {
+      setProgressPercent(100);
+      setTimeout(closeProgressModal, 5000);
+    }
   };
 
   try {
@@ -988,7 +1026,6 @@ async function startAutoRun(inputs) {
 
     /* 3. 폴링 */
     const deadline = Date.now() + MAX_POLL_MIN * 60_000;
-    let lastStage = 'queued';
 
     while (Date.now() < deadline) {
       run = await getRunDetail(run.id);
@@ -996,6 +1033,7 @@ async function startAutoRun(inputs) {
       if (run.status === 'queued') {
         setProgressStep('queued', 'active');
         setProgressStatus(`큐 대기 중 (${fmtElapsed(Date.now() - start)})…`);
+        lastStage = 'queued';
       } else if (run.status === 'in_progress') {
         if (lastStage === 'queued') setProgressStep('queued', 'done');
 
@@ -1017,7 +1055,9 @@ async function startAutoRun(inputs) {
         const idx = order.indexOf(stage);
         for (let i = 0; i < idx; i++) setProgressStep(order[i], 'done');
         setProgressStep(stage, 'active');
+        if (stage === 'analyze' && !analyzeStartedAt) analyzeStartedAt = Date.now();
         lastStage = stage;
+        setProgressPercent(calcStageProgress(stage, analyzeStartedAt));
 
         const stageLabel = {
           setup:   '환경 설정',
@@ -1028,15 +1068,18 @@ async function startAutoRun(inputs) {
 
       } else if (run.status === 'completed') {
         ['queued','setup','analyze','commit'].forEach(s => setProgressStep(s, 'done'));
+        setProgressPercent(95);
 
         if (run.conclusion === 'success') {
           /* 4. 데이터 새로고침 */
+          lastStage = 'reload';
           setProgressStep('reload', 'active');
           setProgressStatus('데이터 새로고침 중…');
           /* GitHub Pages 캐시 갱신 대기 */
           await sleep(8000);
           await loadData();
           setProgressStep('reload', 'done');
+          setProgressPercent(100);
           finish('success', `✅ 완료! (${fmtElapsed(Date.now() - start)})`);
           showToast('🎉 분석 완료 — 새 데이터가 반영되었습니다');
           return;
