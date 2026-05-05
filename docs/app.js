@@ -8,7 +8,7 @@ const DATA_URL = './data/articles.json';
 const SENTIMENT_LABEL = { positive: '긍정', negative: '부정', neutral: '중립' };
 const SENTIMENT_EMOJI  = { positive: '😊', negative: '😟', neutral: '😐' };
 
-const DEFAULT_KEYWORDS = ['현대 수소차', 'HTWO', '현대자동차 수소연료전지'];
+const DEFAULT_KEYWORDS = ['넥쏘', '수소 연료전지', 'HTWO'];
 
 const REPO_OWNER = 'hyeyoung0214';
 const REPO_NAME  = 'poc_server';
@@ -36,12 +36,18 @@ const CATEGORY_CSS_MAP = {
 };
 
 const LS_RUN_PREFS = 'poc_run_prefs_v1';
+const LS_PAT       = 'poc_github_pat_v1';
+
+const POLL_INTERVAL_MS = 8000;   // 8초마다 폴링
+const MAX_POLL_MIN     = 15;     // 15분 타임아웃
 
 /* ===================== BOOT ===================== */
 document.addEventListener('DOMContentLoaded', () => {
   initFilters();
   renderKeywordTags();
   initRunPanel();
+  initPatModal();
+  initProgressModal();
   loadData();
 });
 
@@ -129,6 +135,7 @@ function getFiltered() {
 function applyFilters() {
   const filtered = getFiltered();
   renderStats(filtered);
+  renderDefaultKeywordStats(filtered);
   renderArticles(filtered);
   if (Object.keys(charts).length) updateCharts(filtered);
 }
@@ -148,6 +155,39 @@ function renderStats(articles) {
   document.getElementById('stat-positive-pct').textContent = pct(pos);
   document.getElementById('stat-negative-pct').textContent = pct(neg);
   document.getElementById('stat-neutral-pct').textContent  = pct(neu);
+}
+
+/* ===================== DEFAULT KEYWORD FREQUENCY ===================== */
+function renderDefaultKeywordStats(articles) {
+  const container = document.getElementById('keyword-freq-grid');
+  if (!container) return;
+
+  /* 공백 제거 + lowercase 후 매칭 — "수소 연료전지" ↔ "수소연료전지" 모두 매칭 */
+  const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '');
+  const total = articles.length;
+
+  const cards = DEFAULT_KEYWORDS.map(kw => {
+    const nkw = norm(kw);
+    const cnt = articles.filter(a => {
+      const text = norm(
+        (a.title || '') + ' ' +
+        (a.description || '') + ' ' +
+        (a.summary || '') + ' ' +
+        (a.keywords || []).join(' ')
+      );
+      return nkw && text.includes(nkw);
+    }).length;
+    const pct = total ? Math.round(cnt / total * 100) : 0;
+    return { kw, cnt, pct };
+  });
+
+  container.innerHTML = cards.map(({kw, cnt, pct}) => `
+    <div class="kw-stat-card">
+      <div class="kw-stat-label">#${esc(kw)}</div>
+      <div><span class="kw-stat-value">${cnt}</span><span class="kw-stat-suffix">건</span></div>
+      <div class="kw-stat-pct">${total ? pct + '% (전체 ' + total + '건 중)' : '데이터 없음'}</div>
+    </div>
+  `).join('');
 }
 
 /* ===================== ARTICLES ===================== */
@@ -546,53 +586,52 @@ function initRunPanel() {
   });
 
   /* 분석 실행 — workflow_dispatch UI 열기 + 입력값 클립보드 자동 복사 */
-  goBtn.addEventListener('click', async () => {
-    const extra     = extraInput.value.trim();
-    const whitelist = whiteInput.value.trim();
-    const blacklist = blackInput.value.trim();
-    const display   = displayInput.value || '30';
-    const days      = daysSelect.value || '0';
-    const workers   = workersInput.value || '5';
-    const reset     = resetBox.checked;
+  /* 현재 입력값 → workflow inputs 객체 변환 */
+  const buildInputs = () => ({
+    extra_keywords:      extraInput.value.trim(),
+    whitelist:           whiteInput.value.trim(),
+    blacklist:           blackInput.value.trim(),
+    display_per_keyword: displayInput.value || '30',
+    days_back:           daysSelect.value || '0',
+    max_workers:         workersInput.value || '5',
+    reset_data:          resetBox.checked,
+  });
 
+  /* === 자동 실행 === */
+  const autoBtn = document.getElementById('btn-run-auto');
+  autoBtn.addEventListener('click', async () => {
     savePrefs();
+    const inputs = buildInputs();
+    const pat = getPat();
+    if (!pat) {
+      openPatModal(() => startAutoRun(inputs));
+    } else {
+      panel.hidden = true;
+      await startAutoRun(inputs);
+    }
+  });
 
-    /* GitHub Actions workflow_dispatch UI URL */
+  /* === 수동 실행 === */
+  const manualBtn = document.getElementById('btn-run-manual');
+  manualBtn.addEventListener('click', () => {
+    savePrefs();
+    const inputs = buildInputs();
+
     const url = `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${WORKFLOW_FILE}`;
     window.open(url, '_blank', 'noopener');
 
-    /* 입력값을 한꺼번에 클립보드에 복사 */
     const clipText = [
-      extra     && `[추가 키워드]   ${extra}`,
-      whitelist && `[필수 포함]    ${whitelist}`,
-      blacklist && `[제외 단어]    ${blacklist}`,
-      `[수집 건수]    ${display}`,
-      `[기간(일)]    ${days}`,
-      `[병렬 워커]    ${workers}`,
-      reset     && `[초기화]      체크 활성화`,
+      inputs.extra_keywords && `[추가 키워드] ${inputs.extra_keywords}`,
+      inputs.whitelist      && `[필수 포함] ${inputs.whitelist}`,
+      inputs.blacklist      && `[제외 단어] ${inputs.blacklist}`,
+      `[수집 건수] ${inputs.display_per_keyword}`,
+      `[기간(일)] ${inputs.days_back}`,
+      `[병렬 워커] ${inputs.max_workers}`,
+      inputs.reset_data && `[초기화] 체크`,
     ].filter(Boolean).join('\n');
+    if (clipText && navigator.clipboard) navigator.clipboard.writeText(clipText).catch(() => {});
 
-    if (clipText && navigator.clipboard) {
-      navigator.clipboard.writeText(clipText).catch(() => {});
-    }
-
-    /* 사용자 안내 */
-    const lines = [
-      '✅ GitHub Actions 페이지가 열렸습니다.',
-      '',
-      '아래 입력란을 채우고 [Run workflow] 클릭:',
-      `• 추가 검색 키워드: ${extra || '(없음)'}`,
-      `• 필수 포함(whitelist): ${whitelist || '(없음)'}`,
-      `• 제외(blacklist): ${blacklist || '(없음)'}`,
-      `• 키워드당 수집 건수: ${display}`,
-      `• 최근 N일: ${days === '0' ? '전체' : days + '일'}`,
-      `• 병렬 워커 수: ${workers}`,
-      `• 데이터 초기화: ${reset ? '체크' : '미체크'}`,
-      '',
-      '※ 위 값들이 자동으로 클립보드에 복사되었습니다.',
-      `※ 병렬 ${workers} 워커 기준 약 ${Math.ceil(50 / parseInt(workers))}~${Math.ceil(120 / parseInt(workers))}초 소요 예상.`,
-    ];
-    alert(lines.join('\n'));
+    showToast('📋 Actions 페이지를 열었습니다 — 입력값은 클립보드에 복사됨');
   });
 
   /* ESC 키로 닫기 */
@@ -600,3 +639,322 @@ function initRunPanel() {
     if (e.key === 'Escape' && !panel.hidden) panel.hidden = true;
   });
 }
+
+/* ===================== PAT MANAGEMENT ===================== */
+function getPat() {
+  return localStorage.getItem(LS_PAT) || '';
+}
+function setPatStored(token) {
+  if (token) localStorage.setItem(LS_PAT, token);
+  else       localStorage.removeItem(LS_PAT);
+}
+
+let _patPendingCb = null;
+
+function openPatModal(onSavedCb) {
+  _patPendingCb = onSavedCb || null;
+  const modal      = document.getElementById('pat-modal');
+  const input      = document.getElementById('pat-input');
+  const clearBtn   = document.getElementById('pat-clear');
+
+  input.value = '';
+  clearBtn.hidden = !getPat();
+  modal.hidden = false;
+  input.focus();
+}
+
+function closePatModal() {
+  document.getElementById('pat-modal').hidden = true;
+  _patPendingCb = null;
+}
+
+function initPatModal() {
+  const modal    = document.getElementById('pat-modal');
+  const input    = document.getElementById('pat-input');
+  const closeBtn = document.getElementById('pat-modal-close');
+  const skipBtn  = document.getElementById('pat-skip');
+  const saveBtn  = document.getElementById('pat-save');
+  const clearBtn = document.getElementById('pat-clear');
+
+  closeBtn.addEventListener('click', closePatModal);
+  skipBtn.addEventListener('click', () => {
+    closePatModal();
+    showToast('수동 실행은 [📋 수동 실행] 버튼을 사용하세요');
+  });
+  saveBtn.addEventListener('click', () => {
+    const tok = input.value.trim();
+    if (!tok) { input.focus(); return; }
+    setPatStored(tok);
+    const cb = _patPendingCb;
+    closePatModal();
+    showToast('🔑 Token 저장 완료');
+    if (cb) cb();
+  });
+  clearBtn.addEventListener('click', () => {
+    setPatStored('');
+    clearBtn.hidden = true;
+    input.value = '';
+    showToast('🗑️ Token 삭제됨');
+  });
+
+  /* 외부 클릭 시 닫기 */
+  modal.addEventListener('click', e => {
+    if (e.target === modal) closePatModal();
+  });
+}
+
+/* ===================== TOAST ===================== */
+let _toastTimer = null;
+function showToast(msg, durMs = 3500) {
+  const t = document.getElementById('toast');
+  document.getElementById('toast-text').textContent = msg;
+  t.hidden = false;
+  if (_toastTimer) clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => { t.hidden = true; }, durMs);
+}
+
+/* ===================== GITHUB API CLIENT ===================== */
+const GH_API = 'https://api.github.com';
+
+async function ghFetch(path, options = {}) {
+  const pat = getPat();
+  if (!pat) throw new Error('GitHub Token이 설정되지 않았습니다.');
+  const res = await fetch(`${GH_API}${path}`, {
+    ...options,
+    headers: {
+      'Accept': 'application/vnd.github+json',
+      'Authorization': `Bearer ${pat}`,
+      'X-GitHub-Api-Version': '2022-11-28',
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+      ...(options.headers || {}),
+    },
+  });
+  if (res.status === 401 || res.status === 403) {
+    setPatStored('');
+    throw new Error(`인증 실패 (HTTP ${res.status}) — Token이 만료되었거나 권한이 부족합니다.`);
+  }
+  if (!res.ok) {
+    const txt = await res.text();
+    throw new Error(`GitHub API 오류 ${res.status}: ${txt.slice(0, 200)}`);
+  }
+  if (res.status === 204) return null;
+  return res.json();
+}
+
+async function triggerWorkflow(inputs) {
+  /* boolean → string for API */
+  const apiInputs = {
+    ...inputs,
+    reset_data: inputs.reset_data ? 'true' : 'false',
+  };
+  await ghFetch(
+    `/repos/${REPO_OWNER}/${REPO_NAME}/actions/workflows/${WORKFLOW_FILE}/dispatches`,
+    {
+      method: 'POST',
+      body: JSON.stringify({ ref: 'main', inputs: apiInputs }),
+    },
+  );
+}
+
+async function findLatestRun(triggeredAfterISO) {
+  const data = await ghFetch(
+    `/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs?per_page=10&event=workflow_dispatch`,
+  );
+  const runs = data.workflow_runs || [];
+  /* triggeredAfterISO 이후 생성된 것 중 가장 최근 */
+  const after = new Date(triggeredAfterISO);
+  const candidates = runs.filter(r => new Date(r.created_at) >= after);
+  return candidates.length ? candidates[0] : (runs[0] || null);
+}
+
+async function getRunDetail(runId) {
+  return ghFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs/${runId}`);
+}
+
+async function getRunJobs(runId) {
+  return ghFetch(`/repos/${REPO_OWNER}/${REPO_NAME}/actions/runs/${runId}/jobs`);
+}
+
+/* ===================== PROGRESS MODAL ===================== */
+function setProgressStep(stepName, state) {
+  /* state: 'pending' | 'active' | 'done' | 'failed' */
+  const li = document.querySelector(`.step[data-step="${stepName}"]`);
+  if (!li) return;
+  li.classList.remove('pending', 'active', 'done', 'failed');
+  li.classList.add(state);
+}
+
+function resetProgressSteps() {
+  ['trigger','queued','setup','analyze','commit','reload'].forEach(s =>
+    setProgressStep(s, 'pending')
+  );
+}
+
+function setProgressStatus(text, type = 'running') {
+  document.getElementById('progress-text').textContent = text;
+  const wrap = document.querySelector('.progress-status');
+  wrap.classList.remove('success', 'error');
+  if (type === 'success') wrap.classList.add('success');
+  if (type === 'error')   wrap.classList.add('error');
+
+  const icon = document.getElementById('progress-icon');
+  icon.classList.remove('spinner-sm');
+  if (type === 'success') {
+    icon.textContent = '✅';
+    icon.style.fontSize = '20px';
+  } else if (type === 'error') {
+    icon.textContent = '❌';
+    icon.style.fontSize = '20px';
+  } else {
+    icon.textContent = '';
+    icon.style.fontSize = '';
+    icon.classList.add('spinner-sm');
+  }
+}
+
+function openProgressModal() {
+  resetProgressSteps();
+  setProgressStatus('워크플로 시작 중…', 'running');
+  document.getElementById('progress-elapsed').textContent = '0초';
+  document.getElementById('progress-actions-link').href =
+    `https://github.com/${REPO_OWNER}/${REPO_NAME}/actions`;
+  document.getElementById('progress-close').hidden = true;
+  document.getElementById('progress-modal').hidden = false;
+}
+
+function closeProgressModal() {
+  document.getElementById('progress-modal').hidden = true;
+}
+
+function fmtElapsed(ms) {
+  const sec = Math.floor(ms / 1000);
+  if (sec < 60) return `${sec}초`;
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}분 ${s}초`;
+}
+
+/* GitHub Actions step 이름 → UI 단계 매핑 */
+function mapStepToUiStage(stepName) {
+  const n = (stepName || '').toLowerCase();
+  if (n.includes('checkout') || n.includes('python') || n.includes('install')) return 'setup';
+  if (n.includes('reset')) return 'setup';
+  if (n.includes('fetch') || n.includes('analyze')) return 'analyze';
+  if (n.includes('upload')) return 'commit';
+  if (n.includes('commit') || n.includes('push')) return 'commit';
+  return null;
+}
+
+/* ===================== AUTO RUN ORCHESTRATOR ===================== */
+async function startAutoRun(inputs) {
+  openProgressModal();
+  const start = Date.now();
+
+  /* 경과 시간 타이머 */
+  const timer = setInterval(() => {
+    document.getElementById('progress-elapsed').textContent = fmtElapsed(Date.now() - start);
+  }, 1000);
+
+  const finish = (status, msg) => {
+    clearInterval(timer);
+    setProgressStatus(msg, status);
+    document.getElementById('progress-close').hidden = false;
+  };
+
+  try {
+    /* 1. 트리거 */
+    const triggeredAt = new Date().toISOString();
+    setProgressStep('trigger', 'active');
+    await triggerWorkflow(inputs);
+    setProgressStep('trigger', 'done');
+
+    /* 2. 큐 등록된 run 찾기 (최대 30초 대기) */
+    setProgressStep('queued', 'active');
+    setProgressStatus('실행 큐 등록 대기 중…');
+    let run = null;
+    for (let i = 0; i < 10; i++) {
+      await sleep(3000);
+      run = await findLatestRun(triggeredAt);
+      if (run) break;
+    }
+    if (!run) throw new Error('새 워크플로 실행을 찾을 수 없습니다.');
+    document.getElementById('progress-actions-link').href = run.html_url;
+
+    /* 3. 폴링 */
+    const deadline = Date.now() + MAX_POLL_MIN * 60_000;
+    let lastStage = 'queued';
+
+    while (Date.now() < deadline) {
+      run = await getRunDetail(run.id);
+
+      if (run.status === 'queued') {
+        setProgressStep('queued', 'active');
+        setProgressStatus(`큐 대기 중 (${fmtElapsed(Date.now() - start)})…`);
+      } else if (run.status === 'in_progress') {
+        if (lastStage === 'queued') setProgressStep('queued', 'done');
+
+        /* 현재 실행 중인 step 확인 */
+        let currentStepName = '';
+        try {
+          const jobs = await getRunJobs(run.id);
+          const job = jobs.jobs && jobs.jobs[0];
+          if (job) {
+            const inProg = (job.steps || []).find(s => s.status === 'in_progress');
+            currentStepName = inProg ? inProg.name : '';
+          }
+        } catch {}
+
+        const stage = mapStepToUiStage(currentStepName) || 'analyze';
+
+        /* 이전 stage들을 done 처리 */
+        const order = ['queued','setup','analyze','commit'];
+        const idx = order.indexOf(stage);
+        for (let i = 0; i < idx; i++) setProgressStep(order[i], 'done');
+        setProgressStep(stage, 'active');
+        lastStage = stage;
+
+        const stageLabel = {
+          setup:   '환경 설정',
+          analyze: '뉴스 수집 + AI 분석 (이 단계가 가장 오래 걸립니다)',
+          commit:  '결과 저장 중',
+        }[stage] || '진행 중';
+        setProgressStatus(stageLabel);
+
+      } else if (run.status === 'completed') {
+        ['queued','setup','analyze','commit'].forEach(s => setProgressStep(s, 'done'));
+
+        if (run.conclusion === 'success') {
+          /* 4. 데이터 새로고침 */
+          setProgressStep('reload', 'active');
+          setProgressStatus('데이터 새로고침 중…');
+          /* GitHub Pages 캐시 갱신 대기 */
+          await sleep(8000);
+          await loadData();
+          setProgressStep('reload', 'done');
+          finish('success', `✅ 완료! (${fmtElapsed(Date.now() - start)})`);
+          showToast('🎉 분석 완료 — 새 데이터가 반영되었습니다');
+          return;
+        } else {
+          ['queued','setup','analyze','commit'].forEach(s => setProgressStep(s, 'pending'));
+          setProgressStep('analyze', 'failed');
+          finish('error', `실패: ${run.conclusion} — Actions 로그를 확인하세요`);
+          return;
+        }
+      }
+
+      await sleep(POLL_INTERVAL_MS);
+    }
+
+    finish('error', '⏰ 타임아웃 — Actions에서 직접 확인해주세요');
+
+  } catch (err) {
+    console.error(err);
+    finish('error', `❌ ${err.message}`);
+  }
+}
+
+function initProgressModal() {
+  document.getElementById('progress-close').addEventListener('click', closeProgressModal);
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }

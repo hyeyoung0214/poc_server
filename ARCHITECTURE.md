@@ -46,19 +46,40 @@ poc_server/
 
 ---
 
-## 데이터 흐름
+## 데이터 흐름 — 자동 실행 (PAT 사용)
 
 ```
-[사용자가 대시보드의 「📊 분석 시작」 버튼 클릭]
+[대시보드 「📊 분석 시작」 → Run Panel 입력 → 「🚀 자동 실행」]
          │
-         ├─ 추가 키워드 입력 (옵션)
-         ├─ 기존 데이터 초기화 체크 (옵션)
+         ├─ PAT 미등록 시 → 모달에서 등록 (localStorage 저장)
          │
          ▼
-[GitHub Actions workflow_dispatch UI — 새 탭으로 자동 이동]
+[브라우저 → POST /repos/.../workflows/.../dispatches]
+   GitHub API workflow_dispatch (모든 inputs 전달)
          │
-         ├─ extra_keywords 입력란에 사용자 키워드 붙여넣기
-         └─ [Run workflow] 클릭
+         ▼
+[GitHub Actions 워크플로 실행]
+         │
+         ▼ (브라우저는 8초마다 폴링)
+[GET /actions/runs/{run_id}, /jobs] → 진행률 모달 업데이트
+   ├─ queued      → 1단계 (큐 대기)
+   ├─ in_progress → step에 따라 setup/analyze/commit
+   └─ completed   → 6단계 (대시보드 갱신)
+         │
+         ▼
+[articles.json 자동 fetch → 차트·카드 즉시 갱신]
+```
+
+## 데이터 흐름 — 수동 실행 (PAT 없이)
+
+```
+[「📋 수동 실행」]
+         │
+         ▼
+[GitHub Actions UI 새 탭] + 입력값 클립보드 자동 복사
+         │
+         ▼
+[사용자가 [Run workflow] 클릭]
          │
          ▼
 [scripts/main.py]

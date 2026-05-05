@@ -114,12 +114,15 @@
         </div>
 
         <div class="run-actions">
-          <button class="btn-run-go" id="btn-run-go" type="button">
-            🚀 GitHub Actions에서 실행
+          <button class="btn-run-go" id="btn-run-auto" type="button">
+            🚀 자동 실행 (브라우저에서 진행률 확인)
+          </button>
+          <button class="btn-secondary btn-run-manual" id="btn-run-manual" type="button">
+            📋 수동 실행 (Actions 페이지 열기)
           </button>
           <p class="run-note">
-            ※ 클릭 시 GitHub Actions 페이지가 새 탭으로 열립니다.<br>
-            "Run workflow" 버튼을 누르면 분석이 시작됩니다 (약 5~15분 소요).
+            <strong>자동 실행</strong>: GitHub Token 1회 등록 후 클릭만으로 실행 + 실시간 진행률.<br>
+            <strong>수동 실행</strong>: Actions 페이지를 새 탭으로 열어 직접 [Run workflow] 클릭.
           </p>
         </div>
       </div>
@@ -146,6 +149,12 @@
         <div class="stat-value" id="stat-neutral">—</div>
         <div class="stat-pct" id="stat-neutral-pct"></div>
       </div>
+    </section>
+
+    <!-- ===== DEFAULT KEYWORDS FREQUENCY ===== -->
+    <section class="keyword-freq-section">
+      <h3 class="section-title">기본 키워드별 빈도 <span class="section-hint">(현재 필터 조건의 기사 중)</span></h3>
+      <div class="keyword-freq-grid" id="keyword-freq-grid"></div>
     </section>
 
     <!-- ===== CHARTS ===== -->
@@ -276,8 +285,90 @@
   </main>
 
   <footer class="footer">
-    <p>데이터 출처: 네이버 뉴스 &nbsp;|&nbsp; 분석: Google Gemini &nbsp;|&nbsp; 사용자 트리거 방식 (상단 [📊 분석 시작] 클릭)</p>
+    <p>데이터 출처: 네이버 뉴스 &nbsp;|&nbsp; 분석: Google Gemini &nbsp;|&nbsp; 사용자 트리거 (자동/수동)</p>
   </footer>
+
+  <!-- ===== PAT MODAL ===== -->
+  <div class="modal-overlay" id="pat-modal" hidden>
+    <div class="modal modal--md" role="dialog" aria-labelledby="pat-modal-title">
+      <div class="modal-head">
+        <h3 id="pat-modal-title">🔑 GitHub Token 1회 등록</h3>
+        <button class="modal-close" id="pat-modal-close" aria-label="닫기">×</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-desc">
+          웹페이지에서 분석을 자동으로 실행하려면 GitHub Personal Access Token이 필요합니다.
+          <br>토큰은 <strong>이 브라우저에만</strong> 저장되며 GitHub 외부로 전송되지 않습니다.
+        </p>
+        <details class="pat-help">
+          <summary>📝 토큰 발급 방법 (1분)</summary>
+          <ol>
+            <li><a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">Fine-grained Token 생성</a></li>
+            <li><strong>Resource owner</strong>: hyeyoung0214</li>
+            <li><strong>Repository access</strong>: poc_server 만 선택</li>
+            <li><strong>Permissions</strong>:
+              <ul>
+                <li>Actions → <strong>Read and write</strong></li>
+                <li>Contents → Read</li>
+                <li>Metadata → Read (자동)</li>
+              </ul>
+            </li>
+            <li>Generate token → 복사 → 아래에 붙여넣기</li>
+          </ol>
+        </details>
+        <input type="password" id="pat-input" class="pat-input"
+               placeholder="github_pat_..." autocomplete="off" />
+        <div class="pat-warn">
+          ⚠️ 이 토큰은 자동 실행 권한을 가집니다. 신뢰할 수 없는 기기에서는 사용 후 [Token 삭제]를 눌러 주세요.
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn-link" id="pat-clear" hidden>🗑️ 저장된 Token 삭제</button>
+        <div class="modal-foot-spacer"></div>
+        <button class="btn-secondary" id="pat-skip">건너뛰기 (수동)</button>
+        <button class="btn-primary" id="pat-save">저장 후 실행</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== PROGRESS MODAL ===== -->
+  <div class="modal-overlay" id="progress-modal" hidden>
+    <div class="modal modal--md">
+      <div class="modal-head">
+        <h3>📊 분석 진행 중</h3>
+        <span class="elapsed-badge" id="progress-elapsed">0초</span>
+      </div>
+      <div class="modal-body">
+        <div class="progress-status">
+          <div class="status-icon spinner-sm" id="progress-icon"></div>
+          <div class="status-text" id="progress-text">워크플로 시작 중…</div>
+        </div>
+        <ol class="step-list" id="step-list">
+          <li class="step pending" data-step="trigger">워크플로 트리거</li>
+          <li class="step pending" data-step="queued">실행 큐 등록</li>
+          <li class="step pending" data-step="setup">환경 설정 (Python · 의존성)</li>
+          <li class="step pending" data-step="analyze">뉴스 수집 + AI 분석</li>
+          <li class="step pending" data-step="commit">결과 저장 및 push</li>
+          <li class="step pending" data-step="reload">대시보드 갱신</li>
+        </ol>
+        <p class="progress-note" id="progress-note">
+          예상 소요: 1~3분 · GitHub Actions와 실시간 동기화 중
+        </p>
+      </div>
+      <div class="modal-foot">
+        <a class="btn-link" id="progress-actions-link"
+           href="#" target="_blank" rel="noopener">GitHub Actions에서 보기 ↗</a>
+        <div class="modal-foot-spacer"></div>
+        <button class="btn-secondary" id="progress-close" hidden>닫기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST ===== -->
+  <div class="toast" id="toast" hidden>
+    <span class="toast-icon">✅</span>
+    <span class="toast-text" id="toast-text">완료</span>
+  </div>
 
   <script src="app.js"></script>
 </body>

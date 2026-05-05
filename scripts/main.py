@@ -27,6 +27,12 @@ def load_existing() -> list:
     return []
 
 
+def load_default_blacklist() -> list:
+    """keywords.json의 default_blacklist 로드 (항상 적용되는 제외 단어)"""
+    with open(KEYWORDS_PATH, encoding="utf-8") as f:
+        return json.load(f).get("default_blacklist", [])
+
+
 def load_keywords() -> list:
     """기본 키워드 + EXTRA_KEYWORDS 환경 변수(쉼표 구분) 병합 — 중복 제거"""
     with open(KEYWORDS_PATH, encoding="utf-8") as f:
@@ -88,7 +94,9 @@ def main() -> int:
         whitelist_env = os.environ.get("WHITELIST", "").strip()
         blacklist_env = os.environ.get("BLACKLIST", "").strip()
         whitelist = [w.strip() for w in whitelist_env.split(",") if w.strip()] if whitelist_env else []
-        blacklist = [b.strip() for b in blacklist_env.split(",") if b.strip()] if blacklist_env else []
+        user_blacklist = [b.strip() for b in blacklist_env.split(",") if b.strip()] if blacklist_env else []
+        # default_blacklist + 사용자 입력 병합 (순서 유지, 중복 제거)
+        blacklist = list(dict.fromkeys(load_default_blacklist() + user_blacklist))
 
         log.info(
             f"설정 — 키워드당 수집:{display} / 기간:{days_back}일(0=전체) / "

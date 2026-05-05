@@ -1,4 +1,5 @@
 {
-  "default": ["현대 수소차", "HTWO", "현대자동차 수소연료전지"],
-  "custom": []
+  "default": ["넥쏘", "수소 연료전지", "HTWO"],
+  "custom": [],
+  "default_blacklist": ["전기차"]
 }
