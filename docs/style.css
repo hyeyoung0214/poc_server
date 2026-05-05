@@ -279,6 +279,7 @@ a { color: inherit; text-decoration: none; }
 .card-category.cat-auto { background: #FFF3E0; color: #E65100; border-color: #FFCC80; }
 .card-category.cat-general { background: #ECEFF1; color: #455A64; border-color: #B0BEC5; }
 .card-category.cat-etc { background: #FAFAFA; color: #757575; border-color: #E0E0E0; }
+.card-category.cat-keyword { background: #FFF8E1; color: #B26A00; border-color: #FFE082; }
 
 .relevance-row {
   display: flex;

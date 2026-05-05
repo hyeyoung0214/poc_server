@@ -26,14 +26,24 @@ let activeDateFrom = null;   // YYYY-MM-DD
 let activeDateTo   = null;   // YYYY-MM-DD
 let charts = {};
 
+/* Gemini 기본 카테고리 4개 (analyze.py BASE_CATEGORIES와 동기화) */
+const BASE_CATEGORIES = [
+  '수소차/HTWO 직접',
+  '수소 모빌리티',
+  '모빌리티 일반',
+  '기타',
+];
+
 const CATEGORY_CSS_MAP = {
   '수소차/HTWO 직접': 'cat-h2',
   '수소 모빌리티':    'cat-mobility',
-  'EV/전기차':        'cat-ev',
-  '자율주행':         'cat-auto',
   '모빌리티 일반':    'cat-general',
   '기타':             'cat-etc',
+  /* 옛 데이터 호환 (이전 분류값이 articles.json에 남아있을 때) */
+  'EV/전기차':        'cat-ev',
+  '자율주행':         'cat-auto',
 };
+/* 키워드 카테고리(BASE 외)는 cat-keyword 클래스로 fallback */
 
 const LS_RUN_PREFS    = 'poc_run_prefs_v1';
 const LS_PAT          = 'poc_github_pat_v1';
@@ -105,6 +115,7 @@ async function loadData(retryCount = 0) {
       ts ? '마지막 업데이트: ' + ts : '데이터 없음';
 
     allArticles = (data.articles || []).filter(a => a.analyzed);
+    renderCategoryButtons();
     applyFilters();
     buildCharts();
   } catch (e) {
@@ -209,6 +220,32 @@ function renderStats(articles) {
   document.getElementById('stat-neutral-pct').textContent  = pct(neu);
 }
 
+/* ===================== CATEGORY BUTTONS (동적 생성) ===================== */
+function renderCategoryButtons() {
+  const container = document.getElementById('category-btns');
+  if (!container) return;
+
+  /* 데이터에 등장한 카테고리 중 BASE 4개 외 — 키워드 카테고리 + 옛 데이터 호환 */
+  const baseSet = new Set(BASE_CATEGORIES);
+  const dynamicSet = new Set();
+  allArticles.forEach(a => {
+    if (a.category && !baseSet.has(a.category)) dynamicSet.add(a.category);
+  });
+  const dynamic = [...dynamicSet].sort();
+
+  /* [전체] + [BASE 4개] + [동적 카테고리들] */
+  const cats = [
+    { v: 'all', label: '전체' },
+    ...BASE_CATEGORIES.map(c => ({ v: c, label: c })),
+    ...dynamic.map(c => ({ v: c, label: c })),
+  ];
+
+  container.innerHTML = cats.map(({ v, label }) => {
+    const active = v === activeCategory ? 'active' : '';
+    return `<button class="filter-btn ${active}" data-cat="${esc(v)}">${esc(label)}</button>`;
+  }).join('');
+}
+
 /* ===================== DEFAULT KEYWORD FREQUENCY ===================== */
 function renderDefaultKeywordStats(articles) {
   const container = document.getElementById('keyword-freq-grid');
@@ -262,7 +299,7 @@ function buildCard(a) {
   const scorePct = Math.round(score * 100);
 
   const cat      = a.category || '기타';
-  const catCss   = CATEGORY_CSS_MAP[cat] || 'cat-etc';
+  const catCss   = CATEGORY_CSS_MAP[cat] || 'cat-keyword';
 
   const rel      = typeof a.relevance_score === 'number' ? a.relevance_score : null;
   const relPct   = rel != null ? Math.round(rel * 100) : null;

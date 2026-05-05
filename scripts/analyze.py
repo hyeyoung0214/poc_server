@@ -29,9 +29,30 @@ PERSONA = """\
 당신은 분석 결과를 항상 객관적이고 정밀한 JSON 형식으로 제공합니다."""
 
 
-PROMPT_TEMPLATE = (
-    PERSONA
-    + """
+BASE_CATEGORIES = [
+    "수소차/HTWO 직접",
+    "수소 모빌리티",
+    "모빌리티 일반",
+    "기타",
+]
+BASE_CATEGORY_SET = set(BASE_CATEGORIES)
+
+
+def build_prompt(title: str, description: str, keyword_categories: list) -> str:
+    """기사·키워드 카테고리를 기반으로 동적 프롬프트 생성"""
+    keyword_categories = list(keyword_categories or [])
+    cat_enum = " | ".join(BASE_CATEGORIES + keyword_categories)
+    kw_rule = ""
+    if keyword_categories:
+        kw_list = ", ".join(f'"{k}"' for k in keyword_categories)
+        kw_rule = (
+            f"\n  ※ 단, 기사의 가장 핵심 주제가 다음 키워드 중 하나라면 "
+            f"위 4개 대신 해당 키워드를 카테고리로 선택하세요: {kw_list}\n"
+            f"     (여러 키워드가 동시에 매칭되면 가장 비중이 큰 1개만 선택, "
+            f"키워드가 부수적으로만 언급되면 무시하고 위 4개 중 적절한 것 선택)"
+        )
+
+    return PERSONA + f"""
 
 [분석 대상 기사]
 제목: {title}
@@ -50,7 +71,7 @@ PROMPT_TEMPLATE = (
   "sentiment_reason": "감성 판단 근거 한 문장",
   "relevance_score": 0.0,
   "relevance_reason": "HTWO·수소연료전지·수소 모빌리티와의 관련성 근거 한 문장",
-  "category": "수소차/HTWO 직접 | 수소 모빌리티 | EV/전기차 | 자율주행 | 모빌리티 일반 | 기타"
+  "category": "{cat_enum}"
 }}
 
 [평가 기준]
@@ -68,28 +89,16 @@ PROMPT_TEMPLATE = (
   - 0.3~0.5: 일부 단락에서 부수적으로 언급
   - 0.0~0.2: 거의 무관, 단발 언급 또는 전혀 등장 안 함
 
-▸ category: 정확히 다음 6개 중 하나를 선택
+▸ category: 정확히 다음 4개 중 하나를 선택
   - "수소차/HTWO 직접": HTWO 사업·넥쏘·수소승용차 직접 보도
   - "수소 모빌리티": 수소버스·수소트럭·수소철도·수소선박·충전소 인프라
-  - "EV/전기차": 아이오닉·전기차 단독 주제 (수소 무관)
-  - "자율주행": 자율주행·로보택시·AI 모빌리티 (수소 무관)
   - "모빌리티 일반": 그룹 종합·미래 모빌리티 비전·복합 주제
-  - "기타": 그 외 (금융·정치·인사·기타 산업)
+  - "기타": 그 외 (EV/전기차·자율주행·금융·정치·인사·기타 산업){kw_rule}
 """
-)
 
 
-VALID_CATEGORIES = {
-    "수소차/HTWO 직접",
-    "수소 모빌리티",
-    "EV/전기차",
-    "자율주행",
-    "모빌리티 일반",
-    "기타",
-}
-
-
-def _parse_result(raw: str) -> dict:
+def _parse_result(raw: str, keyword_categories: list = None) -> dict:
+    valid_cats = BASE_CATEGORY_SET | set(keyword_categories or [])
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
@@ -113,7 +122,7 @@ def _parse_result(raw: str) -> dict:
         sentiment = "neutral"
 
     category = data.get("category", "기타")
-    if category not in VALID_CATEGORIES:
+    if category not in valid_cats:
         category = "기타"
 
     return {
@@ -134,15 +143,16 @@ def _get_retry_delay(err_str: str, default: int = 65) -> int:
     return int(match.group(1)) + 5 if match else default
 
 
-def analyze_article(article: dict) -> dict | None:
-    prompt = PROMPT_TEMPLATE.format(
+def analyze_article(article: dict, keyword_categories: list = None) -> dict | None:
+    prompt = build_prompt(
         title=article["title"],
         description=article.get("description") or article["title"],
+        keyword_categories=keyword_categories or [],
     )
     for attempt in range(3):
         try:
             response = _model.generate_content(prompt)
-            return _parse_result(response.text)
+            return _parse_result(response.text, keyword_categories or [])
         except Exception as e:
             err_str = str(e)
             if "429" in err_str:
@@ -163,11 +173,18 @@ def analyze_article(article: dict) -> dict | None:
     return None
 
 
-def analyze_articles(articles: list, max_workers: int = 5) -> list:
-    """병렬 분석 — ThreadPoolExecutor, 429 발생 시 워커별 자동 재시도"""
+def analyze_articles(articles: list, keywords: list = None, max_workers: int = 5) -> list:
+    """병렬 분석 — ThreadPoolExecutor, 429 발생 시 워커별 자동 재시도
+
+    keywords: Gemini 카테고리 분류에 동적으로 추가할 키워드 목록 (예: default + extra)
+    """
+    keyword_categories = list(keywords or [])
     total = len(articles)
     if total == 0:
         return articles
+
+    if keyword_categories:
+        log.info(f"키워드 카테고리 활성: {keyword_categories}")
 
     success = 0
     fail = 0
@@ -175,7 +192,7 @@ def analyze_articles(articles: list, max_workers: int = 5) -> list:
     completed = [0]
 
     def _process(article: dict) -> tuple:
-        result = analyze_article(article)
+        result = analyze_article(article, keyword_categories)
         with lock:
             completed[0] += 1
             cur = completed[0]

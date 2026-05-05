@@ -121,7 +121,7 @@ def main() -> int:
 
         if new_articles:
             log.info(f"\n[2단계] AI 분석 ({len(new_articles)}건, 병렬 {max_workers} 워커)")
-            analyzed = analyze_articles(new_articles, max_workers=max_workers)
+            analyzed = analyze_articles(new_articles, keywords=keywords, max_workers=max_workers)
             all_articles = analyzed + existing
         else:
             log.info("신규 기사 없음 — 저장 건너뜀")
