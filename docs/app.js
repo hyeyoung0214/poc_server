@@ -50,7 +50,7 @@ const LS_PAT          = 'poc_github_pat_v1';
 const LS_EXCLUDED_IDS = 'poc_excluded_ids_v1';
 
 const POLL_INTERVAL_MS = 8000;   // 8초마다 폴링
-const MAX_POLL_MIN     = 15;     // 15분 타임아웃
+const MAX_POLL_MIN     = 30;     // 30분 타임아웃 (큰 수집 건수 대비 — Gemini 분석 시간 고려)
 
 /* ===================== LOGGER ===================== */
 const _logBuffer = [];
@@ -1244,7 +1244,7 @@ async function startAutoRun(inputs) {
       await sleep(POLL_INTERVAL_MS);
     }
 
-    finish('error', '⏰ 타임아웃 — Actions에서 직접 확인해주세요');
+    finish('error', `⏰ ${MAX_POLL_MIN}분 타임아웃 — 워크플로는 계속 진행 중일 수 있습니다. Actions에서 직접 확인하세요`);
 
   } catch (err) {
     log('ERROR', '[startAutoRun] 실패:', err);
