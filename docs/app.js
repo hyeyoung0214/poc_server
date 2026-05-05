@@ -42,6 +42,42 @@ const LS_EXCLUDED_IDS = 'poc_excluded_ids_v1';
 const POLL_INTERVAL_MS = 8000;   // 8초마다 폴링
 const MAX_POLL_MIN     = 15;     // 15분 타임아웃
 
+/* ===================== LOGGER ===================== */
+const _logBuffer = [];
+const MAX_LOG_LINES = 300;
+function log(level, ...args) {
+  const ts = new Date().toISOString().slice(11, 23);
+  const msg = args.map(a => {
+    if (a instanceof Error) return `${a.name}: ${a.message}\n${a.stack || ''}`;
+    if (typeof a === 'object' && a !== null) {
+      try { return JSON.stringify(a); } catch { return String(a); }
+    }
+    return String(a);
+  }).join(' ');
+  const line = `[${ts}] [${level}] ${msg}`;
+  _logBuffer.push(line);
+  if (_logBuffer.length > MAX_LOG_LINES) _logBuffer.shift();
+  if (level === 'ERROR')      console.error(line);
+  else if (level === 'WARN')  console.warn(line);
+  else                         console.log(line);
+}
+/* 콘솔에서 pocLogs() / pocCopyLogs() 로 호출 가능 */
+window.pocLogs = () => { const t = _logBuffer.join('\n'); console.log(t); return t; };
+window.pocCopyLogs = async () => {
+  const t = _logBuffer.join('\n');
+  try { await navigator.clipboard.writeText(t); console.log('📋 logs copied to clipboard'); }
+  catch (e) { console.log(t); }
+};
+window.pocClearLogs = () => { _logBuffer.length = 0; console.log('🗑️ logs cleared'); };
+
+/* PAT/헤더용 sanitize — 공백·제어 문자·zero-width 등 제거 후 ASCII printable만 유지 */
+function sanitizeAscii(s) {
+  return String(s || '').replace(/[^\x21-\x7E]/g, '');
+}
+function isValidPat(s) {
+  return /^[\x21-\x7E]+$/.test(s);   // ASCII printable only (33-126)
+}
+
 /* ===================== BOOT ===================== */
 document.addEventListener('DOMContentLoaded', () => {
   initFilters();
@@ -689,8 +725,22 @@ function initPatModal() {
     showToast('수동 실행은 [📋 수동 실행] 버튼을 사용하세요');
   });
   saveBtn.addEventListener('click', () => {
-    const tok = input.value.trim();
-    if (!tok) { input.focus(); return; }
+    const raw = input.value;
+    const tok = sanitizeAscii(raw);
+    if (!tok) {
+      log('WARN', '[PAT] 입력값 비어있음');
+      input.focus();
+      return;
+    }
+    if (!isValidPat(tok)) {
+      log('ERROR', '[PAT] 비ASCII 문자 포함 — sanitize 후에도 유효하지 않음');
+      showToast('⚠️ 토큰에 사용할 수 없는 문자가 섞여 있습니다. 다시 복사해주세요.');
+      return;
+    }
+    if (raw !== tok) {
+      log('WARN', `[PAT] 입력값 자동 정리됨: 원본 ${raw.length}자 → ${tok.length}자 (공백·invisible 제거)`);
+    }
+    log('INFO', `[PAT] 저장 완료 (${tok.length}자, prefix=${tok.slice(0, 10)}…)`);
     setPatStored(tok);
     const cb = _patPendingCb;
     closePatModal();
@@ -823,26 +873,56 @@ function initExcludeFeature() {
 const GH_API = 'https://api.github.com';
 
 async function ghFetch(path, options = {}) {
-  const pat = getPat();
-  if (!pat) throw new Error('GitHub Token이 설정되지 않았습니다.');
-  const res = await fetch(`${GH_API}${path}`, {
-    ...options,
-    headers: {
-      'Accept': 'application/vnd.github+json',
-      'Authorization': `Bearer ${pat}`,
-      'X-GitHub-Api-Version': '2022-11-28',
-      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(options.headers || {}),
-    },
-  });
-  if (res.status === 401 || res.status === 403) {
+  const rawPat = getPat();
+  if (!rawPat) {
+    log('ERROR', '[ghFetch] PAT 미설정');
+    throw new Error('GitHub Token이 설정되지 않았습니다.');
+  }
+
+  /* PAT sanitize — 줄바꿈/공백/zero-width/한글 IME 잔존문자 모두 제거 */
+  const pat = sanitizeAscii(rawPat);
+  if (pat !== rawPat) {
+    log('WARN', `[ghFetch] PAT에 비ASCII/공백 ${rawPat.length - pat.length}자 발견 — 자동 정리 후 재저장`);
+    setPatStored(pat);
+  }
+  if (!pat || !isValidPat(pat)) {
+    log('ERROR', '[ghFetch] PAT이 유효한 ASCII 형식이 아님 — sanitize 후도 부적합');
     setPatStored('');
-    throw new Error(`인증 실패 (HTTP ${res.status}) — Token이 만료되었거나 권한이 부족합니다.`);
+    throw new Error('Token에 비ASCII 문자가 섞여 있습니다. 모달의 「🗑️ 저장된 Token 삭제」 후 새로 복사해 등록해주세요.');
+  }
+
+  const url = `${GH_API}${path}`;
+  const method = options.method || 'GET';
+  log('INFO', `[ghFetch] ${method} ${path}`);
+
+  let res;
+  try {
+    res = await fetch(url, {
+      ...options,
+      headers: {
+        'Accept': 'application/vnd.github+json',
+        'Authorization': `Bearer ${pat}`,
+        'X-GitHub-Api-Version': '2022-11-28',
+        ...(options.body ? { 'Content-Type': 'application/json' } : {}),
+        ...(options.headers || {}),
+      },
+    });
+  } catch (err) {
+    log('ERROR', `[ghFetch] fetch 실패 ${method} ${path}:`, err);
+    throw new Error(`fetch 호출 실패: ${err.message}`);
+  }
+
+  if (res.status === 401 || res.status === 403) {
+    log('ERROR', `[ghFetch] 인증 실패 ${res.status} ${method} ${path}`);
+    setPatStored('');
+    throw new Error(`인증 실패 (HTTP ${res.status}) — Token 만료 또는 권한 부족. 새 토큰으로 다시 등록해주세요.`);
   }
   if (!res.ok) {
-    const txt = await res.text();
+    const txt = await res.text().catch(() => '');
+    log('ERROR', `[ghFetch] HTTP ${res.status} ${method} ${path} — ${txt.slice(0, 300)}`);
     throw new Error(`GitHub API 오류 ${res.status}: ${txt.slice(0, 200)}`);
   }
+  log('INFO', `[ghFetch] ${res.status} OK ${method} ${path}`);
   if (res.status === 204) return null;
   return res.json();
 }
@@ -982,6 +1062,7 @@ function mapStepToUiStage(stepName) {
 
 /* ===================== AUTO RUN ORCHESTRATOR ===================== */
 async function startAutoRun(inputs) {
+  log('INFO', '[startAutoRun] 시작', inputs);
   openProgressModal();
   const start = Date.now();
   let lastStage = 'trigger';
@@ -1097,7 +1178,7 @@ async function startAutoRun(inputs) {
     finish('error', '⏰ 타임아웃 — Actions에서 직접 확인해주세요');
 
   } catch (err) {
-    console.error(err);
+    log('ERROR', '[startAutoRun] 실패:', err);
     finish('error', `❌ ${err.message}`);
   }
 }
