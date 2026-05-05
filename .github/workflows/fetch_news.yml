@@ -20,7 +20,7 @@ on:
         default: ""
         type: string
       display_per_keyword:
-        description: "키워드당 수집 건수 (5~100, 기본 30)"
+        description: "키워드당 수집 건수 (5~1000, 기본 30 — 100 초과 시 자동 페이지네이션)"
         required: false
         default: "30"
         type: string

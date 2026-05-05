@@ -149,7 +149,9 @@ function getFiltered() {
   } else if (activePeriod > 0) {
     const cut = new Date();
     cut.setDate(cut.getDate() - activePeriod);
+    const before = arr.length;
     arr = arr.filter(a => new Date(a.published_at) >= cut);
+    log('INFO', `[getFiltered] period=${activePeriod}일 cut=${cut.toISOString().slice(0, 10)} | ${before} → ${arr.length}건`);
   }
 
   /* sentiment */

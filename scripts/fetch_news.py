@@ -143,48 +143,78 @@ def filter_by_days(articles: list, days_back: int) -> list:
 
 
 def fetch_articles(keywords: list, display: int = 30) -> list:
+    """Naver Search News API로 뉴스 수집.
+
+    - 키워드당 'display'(1~1000)건이 목표 — 100 초과 시 자동 페이지네이션
+    - Naver API 한계: start ≤ 1000, page_size ≤ 100
+    """
     seen_urls: set = set()
     articles: list = []
-    display = max(1, min(100, int(display)))
+    target = max(1, min(1000, int(display)))
+    page_size = min(100, target)
 
     for keyword in keywords:
-        try:
-            resp = requests.get(
-                "https://openapi.naver.com/v1/search/news.json",
-                params={"query": keyword, "display": display, "sort": "date"},
-                headers={
-                    "X-Naver-Client-Id": NAVER_CLIENT_ID,
-                    "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
-                },
-                timeout=10,
-            )
-            resp.raise_for_status()
-            items = resp.json().get("items", [])
-            log.info(f"  [{keyword}] {len(items)}건 수집")
+        collected = 0
+        start = 1
+        while collected < target and start <= 1000:
+            remaining = target - collected
+            this_size = min(page_size, remaining, 1000 - start + 1)
+            try:
+                resp = requests.get(
+                    "https://openapi.naver.com/v1/search/news.json",
+                    params={
+                        "query": keyword,
+                        "display": this_size,
+                        "start": start,
+                        "sort": "date",
+                    },
+                    headers={
+                        "X-Naver-Client-Id": NAVER_CLIENT_ID,
+                        "X-Naver-Client-Secret": NAVER_CLIENT_SECRET,
+                    },
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                items = resp.json().get("items", [])
 
-            for item in items:
-                url = item.get("originallink") or item.get("link", "")
-                if not url or url in seen_urls:
-                    continue
-                seen_urls.add(url)
+                if not items:
+                    log.info(f"  [{keyword}] start={start} 결과 없음 — 페이지네이션 종료")
+                    break
 
-                articles.append({
-                    "id": make_id(url),
-                    "title": clean_html(item.get("title", "")),
-                    "url": url,
-                    "source": get_source(url),
-                    "published_at": parse_date(item.get("pubDate", "")),
-                    "description": clean_html(item.get("description", "")),
-                    "search_keyword": keyword,
-                    "summary": None,
-                    "keywords": [],
-                    "sentiment": None,
-                    "sentiment_score": None,
-                    "sentiment_reason": None,
-                    "analyzed": False,
-                })
+                log.info(f"  [{keyword}] start={start} {len(items)}건 수집")
 
-        except Exception as e:
-            log.error(f"[ERROR] Naver API 오류 (키워드: {keyword}) — {e}", exc_info=True)
+                for item in items:
+                    if collected >= target:
+                        break
+                    url = item.get("originallink") or item.get("link", "")
+                    if not url or url in seen_urls:
+                        continue
+                    seen_urls.add(url)
+                    articles.append({
+                        "id": make_id(url),
+                        "title": clean_html(item.get("title", "")),
+                        "url": url,
+                        "source": get_source(url),
+                        "published_at": parse_date(item.get("pubDate", "")),
+                        "description": clean_html(item.get("description", "")),
+                        "search_keyword": keyword,
+                        "summary": None,
+                        "keywords": [],
+                        "sentiment": None,
+                        "sentiment_score": None,
+                        "sentiment_reason": None,
+                        "analyzed": False,
+                    })
+                    collected += 1
+
+                # 응답이 요청 사이즈보다 적으면 마지막 페이지
+                if len(items) < this_size:
+                    break
+
+                start += this_size
+
+            except Exception as e:
+                log.error(f"[ERROR] Naver API 오류 (키워드: {keyword}, start={start}) — {e}", exc_info=True)
+                break
 
     return articles
